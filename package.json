@@ -1,0 +1,10 @@
+{
+  "name": "buku-kas-bot",
+  "version": "1.0.0",
+  "description": "Bot pencatat kasir",
+  "main": "api/index.js",
+  "dependencies": {
+    "axios": "^1.6.8",
+    "firebase-admin": "^12.0.0"
+  }
+}
