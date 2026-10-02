@@ -45,20 +45,20 @@ module.exports = async (req, res) => {
     await axios.post(`${apiUrl}/editMessageText`, payload);
   };
 
-  // Struktur Menu Utama
-  const mainMenuMarkup = {
-    inline_keyboard: [
-      [{ text: '1. 📥 Masuk Brimo', callback_data: 'menu_1' }, { text: '2. 📥 Masuk SeaBank', callback_data: 'menu_2' }],
-      [{ text: '3. 🔄 Mutasi Antar Rekening', callback_data: 'menu_3' }],
-      [{ text: '4. 📝 Catat Kasbon', callback_data: 'menu_4' }, { text: '5. 📤 Pengeluaran Umum', callback_data: 'menu_5' }],
-      [{ text: '6. 💰 Cek Saldo Total', callback_data: 'menu_6' }],
-      [{ text: '7. 📋 Riwayat & Hapus Data', callback_data: 'menu_7' }]
-    ]
+  // Struktur Menu Permanen (Nempel di bawah dekat keyboard HP)
+  const keyboardBawah = {
+    keyboard: [
+      [{ text: '📥 Dana Masuk' }, { text: '📤 Pengeluaran' }],
+      [{ text: '📝 Kasbon' }, { text: '🔄 Mutasi' }],
+      [{ text: '💰 Cek Saldo Total' }, { text: '📋 Cek Riwayat' }]
+    ],
+    resize_keyboard: true,
+    is_persistent: true
   };
 
   try {
     // ==========================================
-    // A. LOGIKA JIKA TOMBOL MENU DITEKAN
+    // A. LOGIKA TOMBOL INLINE (Sub-menu & Konfirmasi)
     // ==========================================
     if (update.callback_query) {
       const callback = update.callback_query;
@@ -66,18 +66,95 @@ module.exports = async (req, res) => {
       const messageId = callback.message.message_id;
       const data = callback.data;
 
-      // Hapus ikon loading pada tombol Telegram
       await axios.post(`${apiUrl}/answerCallbackQuery`, { callback_query_id: callback.id });
 
-      // Balasan Panduan Format (Tombol 1-5)
-      if (data === 'menu_1') await sendMessage(chatId, 'Ketik: <code>+b [keterangan] [nominal]</code>\nContoh: <code>+b bos 5jt</code>');
-      else if (data === 'menu_2') await sendMessage(chatId, 'Ketik: <code>+s [keterangan] [nominal]</code>\nContoh: <code>+s jualan 500k</code>');
-      else if (data === 'menu_3') await sendMessage(chatId, 'Ketik: <code>tf [dari] ke [tujuan] [nominal]</code>\nContoh: <code>tf b ke s 1jt</code>');
-      else if (data === 'menu_4') await sendMessage(chatId, 'Ketik: <code>bon [bank] [nama] [nominal]</code>\nContoh: <code>bon b alpin 300k</code>');
-      else if (data === 'menu_5') await sendMessage(chatId, 'Ketik: <code>-[bank] [keterangan] [nominal]</code>\nContoh: <code>-s spidol 20k</code>');
-      
-      // Hitung Saldo Real-Time (Tombol 6)
-      else if (data === 'menu_6') {
+      // Logika Konfirmasi Reset Saldo
+      if (data === 'konfirmasi_reset') {
+        await editMessage(chatId, messageId, '⚠️ <b>PERINGATAN BAHAYA</b> ⚠️\n\nApakah Anda YAKIN ingin menghapus <b>SEMBARANG SELURUH CATATAN</b> dan me-reset saldo menjadi Rp0? Data yang dihapus tidak bisa dikembalikan.', {
+          inline_keyboard: [
+            [{ text: '✅ YA, HAPUS SEMUA DATA', callback_data: 'eksekusi_reset' }],
+            [{ text: '❌ BATALKAN', callback_data: 'batal_reset' }]
+          ]
+        });
+      }
+      else if (data === 'eksekusi_reset') {
+        const snapshot = await db.collection('transaksi').get();
+        const batch = db.batch();
+        snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+        await editMessage(chatId, messageId, '✅ <b>DATABASE BERHASIL DIRESET</b>\nSeluruh catatan telah dihapus. Saldo kembali Rp0.');
+      }
+      else if (data === 'batal_reset') {
+        await editMessage(chatId, messageId, '✅ Proses reset dibatalkan. Data Anda aman.');
+      }
+
+      // Logika Kategori Riwayat
+      else if (data.startsWith('riwayat_')) {
+        const kategori = data.split('_')[1]; // masuk, keluar, kasbon, mutasi
+        
+        // Mengambil data dan memfilter di server agar aman dari limit index Firebase
+        const snapshot = await db.collection('transaksi').orderBy('waktu', 'desc').get();
+        let teksRiwayat = `<b>📋 10 RIWAYAT ${kategori.toUpperCase()} TERAKHIR</b>\n\n`;
+        let count = 1;
+
+        snapshot.forEach(doc => {
+          const trx = doc.data();
+          if (trx.jenis === kategori && count <= 10) {
+            let ket = trx.keterangan || trx.nama_peminjam || `${trx.dari_rekening} -> ${trx.ke_rekening}`;
+            let rek = trx.rekening ? trx.rekening.toUpperCase() : '';
+            teksRiwayat += `${count}. <b>${rek}</b>: ${formatRp(trx.nominal)}\n   └ <i>Ket: ${ket}</i>\n\n`;
+            count++;
+          }
+        });
+
+        if (count === 1) teksRiwayat += "<i>Belum ada catatan di kategori ini.</i>";
+        await editMessage(chatId, messageId, teksRiwayat);
+      }
+
+      return res.status(200).send('OK');
+    }
+
+    // ==========================================
+    // B. LOGIKA KETIKAN & MENU BAWAH
+    // ==========================================
+    if (update.message && update.message.text) {
+      const chatId = update.message.chat.id;
+      const rawText = update.message.text.trim();
+      const text = rawText.toLowerCase();
+
+      // Trigger memunculkan keyboard bawah
+      if (text === '/start' || text === '/menu') {
+        await sendMessage(chatId, '<b>MENU KASIR AKTIF</b>\n\nSilakan gunakan tombol di bawah (dekat kolom ketik) untuk navigasi, atau langsung ketik catatan Anda.', keyboardBawah);
+        return res.status(200).send('OK');
+      }
+
+      // Reaksi Saat Tombol Bawah Ditekan
+      if (rawText === '📥 Dana Masuk') {
+        await sendMessage(chatId, '<b>PANDUAN DANA MASUK</b>\nKetik: <code>+[bank] [keterangan] [nominal]</code>\n\nContoh Brimo: <code>+b bos 5jt</code>\nContoh SeaBank: <code>+s jualan 500k</code>');
+        return res.status(200).send('OK');
+      }
+      else if (rawText === '📤 Pengeluaran') {
+        await sendMessage(chatId, '<b>PANDUAN PENGELUARAN</b>\nKetik: <code>-[bank] [keterangan] [nominal]</code>\n\nContoh: <code>-s spidol 20k</code>');
+        return res.status(200).send('OK');
+      }
+      else if (rawText === '📝 Kasbon') {
+        await sendMessage(chatId, '<b>PANDUAN CATAT KASBON</b>\nKetik: <code>bon [bank] [nama] [nominal]</code>\n\nContoh: <code>bon b alpin 300k</code>');
+        return res.status(200).send('OK');
+      }
+      else if (rawText === '🔄 Mutasi') {
+        await sendMessage(chatId, '<b>PANDUAN MUTASI / TRANSFER</b>\nKetik: <code>tf [dari] ke [tujuan] [nominal]</code>\n\nContoh: <code>tf b ke s 1jt</code>');
+        return res.status(200).send('OK');
+      }
+      else if (rawText === '📋 Cek Riwayat') {
+        await sendMessage(chatId, 'Pilih kategori riwayat yang ingin Anda cek:', {
+          inline_keyboard: [
+            [{ text: '📥 Dana Masuk', callback_data: 'riwayat_masuk' }, { text: '📝 Kasbon', callback_data: 'riwayat_kasbon' }],
+            [{ text: '📤 Pengeluaran', callback_data: 'riwayat_keluar' }, { text: '🔄 Mutasi', callback_data: 'riwayat_mutasi' }]
+          ]
+        });
+        return res.status(200).send('OK');
+      }
+      else if (rawText === '💰 Cek Saldo Total') {
         const snapshot = await db.collection('transaksi').get();
         let saldoBrimo = 0, saldoSea = 0, totalKasbon = 0;
         
@@ -100,71 +177,18 @@ module.exports = async (req, res) => {
           }
         });
 
-        const teksSaldo = `<b>💰 INFORMASI SALDO SAAT INI</b>\n\n💳 <b>Brimo:</b> ${formatRp(saldoBrimo)}\n💳 <b>SeaBank:</b> ${formatRp(saldoSea)}\n\n📝 <b>Total Kasbon Beredar:</b> ${formatRp(totalKasbon)}`;
-        await editMessage(chatId, messageId, teksSaldo, { inline_keyboard: [[{ text: '🔙 Kembali', callback_data: 'back_menu' }]] });
-      }
-      
-      // Tampilkan 10 Riwayat Terakhir & Tombol Hapus (Tombol 7)
-      else if (data === 'menu_7') {
-        const snapshot = await db.collection('transaksi').orderBy('waktu', 'desc').limit(10).get();
+        const teksSaldo = `<b>💰 LAPORAN KEUANGAN KASIR</b>\n\n💳 <b>Sisa Saldo Brimo:</b> ${formatRp(saldoBrimo)}\n💳 <b>Sisa Saldo SeaBank:</b> ${formatRp(saldoSea)}\n\n📝 <b>Total Kasbon Beredar:</b> ${formatRp(totalKasbon)}`;
         
-        if (snapshot.empty) {
-          await editMessage(chatId, messageId, 'Data masih kosong.', { inline_keyboard: [[{ text: '🔙 Kembali', callback_data: 'back_menu' }]] });
-          return res.status(200).send('OK');
-        }
-
-        let teksRiwayat = '<b>📋 10 TRANSAKSI TERAKHIR</b>\n\n';
-        let keyboardHapus = [];
-        let i = 1;
-
-        snapshot.forEach(doc => {
-          const trx = doc.data();
-          let icon = trx.jenis === 'masuk' ? '📥' : (trx.jenis === 'mutasi' ? '🔄' : '📤');
-          let ket = trx.keterangan || trx.nama_peminjam || `${trx.dari_rekening} -> ${trx.ke_rekening}`;
-          let rek = trx.rekening ? trx.rekening.toUpperCase() : '';
-          
-          teksRiwayat += `${i}. ${icon} <b>${trx.jenis.toUpperCase()} ${rek}</b>: ${formatRp(trx.nominal)}\n   └ <i>Ket: ${ket}</i>\n\n`;
-          
-          // Susun tombol hapus berdampingan (2 per baris)
-          let btn = { text: `🗑 Hapus ${i}`, callback_data: `del_${doc.id}` };
-          if (i % 2 !== 0) keyboardHapus.push([btn]); 
-          else keyboardHapus[keyboardHapus.length - 1].push(btn);
-          i++;
+        // Tambahkan tombol Reset di bawah rincian Saldo
+        await sendMessage(chatId, teksSaldo, { 
+          inline_keyboard: [[{ text: '⚠️️ Reset Semua Saldo & Catatan', callback_data: 'konfirmasi_reset' }]] 
         });
-
-        keyboardHapus.push([{ text: '🔙 Kembali ke Menu Utama', callback_data: 'back_menu' }]);
-        await editMessage(chatId, messageId, teksRiwayat, { inline_keyboard: keyboardHapus });
-      }
-
-      // Eksekusi Penghapusan Data
-      else if (data.startsWith('del_')) {
-        const docId = data.split('_')[1];
-        await db.collection('transaksi').doc(docId).delete();
-        await editMessage(chatId, messageId, '✅ <b>Transaksi berhasil dihapus!</b>\nSaldo telah disesuaikan.', { inline_keyboard: [[{ text: '🔙 Kembali ke Menu', callback_data: 'back_menu' }]] });
-      }
-
-      // Navigasi Kembali ke Menu Utama
-      else if (data === 'back_menu') {
-        await editMessage(chatId, messageId, '<b>MENU UTAMA KASIR BOS</b>\nPilih operasional:', mainMenuMarkup);
-      }
-
-      return res.status(200).send('OK');
-    }
-
-    // ==========================================
-    // B. LOGIKA JIKA MENGETIK PESAN (SHORTHAND)
-    // ==========================================
-    if (update.message && update.message.text) {
-      const chatId = update.message.chat.id;
-      const rawText = update.message.text.trim();
-      const text = rawText.toLowerCase();
-      
-      // Panggil Menu Utama
-      if (text === '/start' || text === '/menu') {
-        await sendMessage(chatId, '<b>MENU UTAMA KASIR BOS</b>\nPilih operasional:', mainMenuMarkup);
         return res.status(200).send('OK');
       }
 
+      // ==========================================
+      // C. LOGIKA SHORTHAND (Parsing)
+      // ==========================================
       const args = rawText.split(' ');
       const command = args[0].toLowerCase();
       const nominal = parseNominal(args[args.length - 1]);
@@ -183,7 +207,7 @@ module.exports = async (req, res) => {
         await db.collection('transaksi').add(dataTransaksi);
         
         let simbol = tipe === 'masuk' ? '✅' : '🔴';
-        await sendMessage(chatId, `${simbol} <b>Tercatat!</b>\n${tipe.toUpperCase()} ${bank.toUpperCase()}: ${formatRp(nominal)}\nKet: ${keterangan}`);
+        await sendMessage(chatId, `${simbol} <b>Tercatat!</b>\n${tipe.toUpperCase()} ${bank.toUpperCase()}: ${formatRp(nominal)}\nKet: ${keterangan}`, keyboardBawah);
       } 
       else if (command === 'bon') {
         const bank = args[1].toLowerCase();
@@ -192,7 +216,7 @@ module.exports = async (req, res) => {
         dataTransaksi = { ...dataTransaksi, jenis: 'kasbon', rekening: bank, nama_peminjam: nama };
         await db.collection('transaksi').add(dataTransaksi);
         
-        await sendMessage(chatId, `📝 <b>KASBON TERCATAT!</b>\nNama: ${nama}\nDari: ${bank.toUpperCase()}\nNominal: ${formatRp(nominal)}`);
+        await sendMessage(chatId, `📝 <b>KASBON TERCATAT!</b>\nNama: ${nama}\nDari: ${bank.toUpperCase()}\nNominal: ${formatRp(nominal)}`, keyboardBawah);
       } 
       else if (command === 'tf') {
         const dari = args[1].toLowerCase();
@@ -201,8 +225,9 @@ module.exports = async (req, res) => {
         dataTransaksi = { ...dataTransaksi, jenis: 'mutasi', dari_rekening: dari, ke_rekening: ke };
         await db.collection('transaksi').add(dataTransaksi);
         
-        await sendMessage(chatId, `🔄 <b>MUTASI TERCATAT!</b>\n${formatRp(nominal)} dipindah dari ${dari.toUpperCase()} ke ${ke.toUpperCase()}.`);
+        await sendMessage(chatId, `🔄 <b>MUTASI TERCATAT!</b>\n${formatRp(nominal)} dipindah dari ${dari.toUpperCase()} ke ${ke.toUpperCase()}.`, keyboardBawah);
       }
+
     }
   } catch (error) {
     console.error(error);
