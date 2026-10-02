@@ -38,7 +38,6 @@ module.exports = async (req, res) => {
   const token = process.env.TELEGRAM_TOKEN;
   const apiUrl = `https://api.telegram.org/bot${token}`;
 
-  // Helper Pengirim Pesan
   const sendMessage = async (chatId, text, replyMarkup = null) => {
     const payload = { chat_id: chatId, text: text, parse_mode: 'HTML' };
     if (replyMarkup) payload.reply_markup = replyMarkup;
@@ -50,12 +49,9 @@ module.exports = async (req, res) => {
     if (replyMarkup) payload.reply_markup = replyMarkup;
     try {
       await axios.post(`${apiUrl}/editMessageText`, payload);
-    } catch (e) {
-      // Abaikan error jika teks yang diedit sama persis
-    }
+    } catch (e) {}
   };
 
-  // Struktur Menu Permanen
   const keyboardBawah = {
     keyboard: [
       [{ text: '📥 Dana Masuk' }, { text: '📤 Pengeluaran' }],
@@ -68,7 +64,7 @@ module.exports = async (req, res) => {
 
   try {
     // ==========================================
-    // A. LOGIKA TOMBOL INLINE (Paginasi & Konfirmasi)
+    // A. LOGIKA TOMBOL INLINE (Hapus & Paginasi)
     // ==========================================
     if (update.callback_query) {
       const callback = update.callback_query;
@@ -78,7 +74,6 @@ module.exports = async (req, res) => {
 
       await axios.post(`${apiUrl}/answerCallbackQuery`, { callback_query_id: callback.id });
 
-      // Reset Database
       if (data === 'konfirmasi_reset') {
         await editMessage(chatId, messageId, '⚠️ <b>PERINGATAN BAHAYA</b> ⚠️\nApakah Anda YAKIN ingin menghapus <b>SELURUH CATATAN</b>?', {
           inline_keyboard: [[{ text: '✅ YA, HAPUS SEMUA DATA', callback_data: 'eksekusi_reset' }], [{ text: '❌ BATALKAN', callback_data: 'batal_reset' }]]
@@ -94,19 +89,25 @@ module.exports = async (req, res) => {
       else if (data === 'batal_reset') {
         await editMessage(chatId, messageId, '✅ Proses reset dibatalkan. Data Anda aman.');
       }
-
-      // Sistem Halaman / Paginasi Riwayat (contoh data: page_masuk_0)
+      
+      // LOGIKA TOMBOL HAPUS DATA
+      else if (data.startsWith('del_')) {
+        const docId = data.split('_')[1];
+        await db.collection('transaksi').doc(docId).delete();
+        await editMessage(chatId, messageId, '✅ <b>Satu Transaksi berhasil dihapus!</b>\nJika ingin melihat perubahan, silakan buka ulang menu Riwayat.');
+      }
+      
+      // LOGIKA HALAMAN RIWAYAT
       else if (data.startsWith('page_')) {
         const parts = data.split('_');
-        const kategori = parts[1]; // masuk, keluar, kasbon, mutasi
-        const pageIndex = parseInt(parts[2]); // 0, 1, 2...
+        const kategori = parts[1];
+        const pageIndex = parseInt(parts[2]);
 
-        // Mengambil semua data untuk diurutkan dan dipotong sesuai halaman
         const snapshot = await db.collection('transaksi').orderBy('waktu', 'desc').get();
         let items = [];
         snapshot.forEach(doc => {
           const trx = doc.data();
-          if (trx.jenis === kategori) items.push(trx);
+          if (trx.jenis === kategori) items.push({ id: doc.id, ...trx }); // Simpan ID untuk fungsi Hapus
         });
 
         const perPage = 10;
@@ -115,27 +116,36 @@ module.exports = async (req, res) => {
         const currentItems = items.slice(pageIndex * perPage, (pageIndex + 1) * perPage);
 
         let teksRiwayat = `<b>📋 RIWAYAT ${kategori.toUpperCase()} (Hal ${pageIndex + 1}/${totalPages})</b>\n\n`;
+        let keyboardHapus = [];
 
         if (currentItems.length === 0) {
           teksRiwayat += "<i>Belum ada catatan di kategori ini.</i>";
         } else {
           currentItems.forEach((trx, idx) => {
+            const nomor = pageIndex * perPage + idx + 1;
             const tgl = formatTanggal(trx.waktu);
             let ket = trx.keterangan || trx.nama_peminjam || `${trx.dari_rekening} -> ${trx.ke_rekening}`;
             let status = trx.status === 'lunas' ? ' <i>(Lunas)</i>' : '';
             let rek = trx.rekening ? trx.rekening.toUpperCase() : '';
             
-            teksRiwayat += `${pageIndex * perPage + idx + 1}. [${tgl}] <b>${rek}</b>: ${formatRp(trx.nominal)}${status}\n   └ <i>Ket: ${ket}</i>\n\n`;
+            teksRiwayat += `${nomor}. [${tgl}] <b>${rek}</b>: ${formatRp(trx.nominal)}${status}\n   └ <i>Ket: ${ket}</i>\n\n`;
+
+            // Susun 2 tombol hapus per baris agar rapi
+            let btn = { text: `🗑 Hps ${nomor}`, callback_data: `del_${trx.id}` };
+            if (keyboardHapus.length === 0 || keyboardHapus[keyboardHapus.length - 1].length === 2) {
+              keyboardHapus.push([btn]);
+            } else {
+              keyboardHapus[keyboardHapus.length - 1].push(btn);
+            }
           });
         }
 
-        // Tombol Navigasi
         let navButtons = [];
         if (pageIndex > 0) navButtons.push({ text: '⬅️ Prev', callback_data: `page_${kategori}_${pageIndex - 1}` });
         if (pageIndex < totalPages - 1) navButtons.push({ text: 'Next ➡️', callback_data: `page_${kategori}_${pageIndex + 1}` });
+        if (navButtons.length > 0) keyboardHapus.push(navButtons);
 
-        const replyMarkup = navButtons.length > 0 ? { inline_keyboard: [navButtons] } : { inline_keyboard: [] };
-        await editMessage(chatId, messageId, teksRiwayat, replyMarkup);
+        await editMessage(chatId, messageId, teksRiwayat, { inline_keyboard: keyboardHapus });
       }
 
       return res.status(200).send('OK');
@@ -149,19 +159,17 @@ module.exports = async (req, res) => {
       const rawText = update.message.text.trim();
       const text = rawText.toLowerCase();
 
-      // Trigger awal
       if (text === '/start' || text === '/menu') {
-        await sendMessage(chatId, '<b>MENU KASIR AKTIF</b>\nGunakan tombol di bawah, atau ketik langsung format catatan Anda.', keyboardBawah);
+        await sendMessage(chatId, '<b>MENU KASIR AKTIF</b>', keyboardBawah);
         return res.status(200).send('OK');
       }
 
-      // Reaksi Menu Bawah
       if (rawText === '📥 Dana Masuk') {
-        await sendMessage(chatId, '<b>PANDUAN DANA MASUK</b>\nKetik: <code>+[bank] [ket] [nominal]</code>\nContoh: <code>+b bos 5jt</code>');
+        await sendMessage(chatId, '<b>PANDUAN DANA MASUK</b>\nKetik: <code>+[bank] [ket] [nominal]</code>');
         return res.status(200).send('OK');
       }
       else if (rawText === '📤 Pengeluaran') {
-        await sendMessage(chatId, '<b>PANDUAN PENGELUARAN</b>\nKetik: <code>-[bank] [ket] [nominal]</code>\nContoh: <code>-s spidol 20k</code>');
+        await sendMessage(chatId, '<b>PANDUAN PENGELUARAN</b>\nKetik: <code>-[bank] [ket] [nominal]</code>');
         return res.status(200).send('OK');
       }
       else if (rawText === '📝 Kasbon') {
@@ -169,7 +177,7 @@ module.exports = async (req, res) => {
         return res.status(200).send('OK');
       }
       else if (rawText === '🔄 Mutasi') {
-        await sendMessage(chatId, '<b>PANDUAN MUTASI</b>\nKetik: <code>tf [dari] ke [tujuan] [nominal]</code>\nContoh: <code>tf b ke s 1jt</code>');
+        await sendMessage(chatId, '<b>PANDUAN MUTASI</b>\nKetik: <code>tf [dari] ke [tujuan] [nominal]</code>');
         return res.status(200).send('OK');
       }
       else if (rawText === '📋 Cek Riwayat') {
@@ -193,12 +201,11 @@ module.exports = async (req, res) => {
             if (trx.rekening === 'b') saldoBrimo += nom;
             if (trx.rekening === 's') saldoSea += nom;
           } else if (trx.jenis === 'keluar' || trx.jenis === 'kasbon') {
-            // Kasbon tetap mengurangi ATM saat bon ditarik
             if (trx.rekening === 'b') saldoBrimo -= nom;
             if (trx.rekening === 's') saldoSea -= nom;
             
-            // Total kasbon beredar hanya yang berstatus aktif
-            if (trx.jenis === 'kasbon' && trx.status === 'aktif') totalKasbon += nom;
+            // FIX: Menghitung kasbon lama (yg statusnya undefined) dan yg 'aktif'
+            if (trx.jenis === 'kasbon' && trx.status !== 'lunas') totalKasbon += nom;
           } else if (trx.jenis === 'mutasi') {
             if (trx.dari_rekening === 'b') saldoBrimo -= nom;
             if (trx.dari_rekening === 's') saldoSea -= nom;
@@ -212,9 +219,6 @@ module.exports = async (req, res) => {
         return res.status(200).send('OK');
       }
 
-      // ==========================================
-      // C. LOGIKA SHORTHAND (Parsing)
-      // ==========================================
       const args = rawText.split(' ');
       const command = args[0].toLowerCase();
       const nominal = parseNominal(args[args.length - 1]);
@@ -224,7 +228,6 @@ module.exports = async (req, res) => {
         nominal: nominal
       };
 
-      // 1. Shorthand Masuk/Keluar
       if (command.startsWith('+') || command.startsWith('-')) {
         const tipe = command.charAt(0) === '+' ? 'masuk' : 'keluar';
         const bank = command.substring(1);
@@ -236,58 +239,56 @@ module.exports = async (req, res) => {
         let simbol = tipe === 'masuk' ? '✅' : '🔴';
         await sendMessage(chatId, `${simbol} <b>Tercatat!</b>\n${tipe.toUpperCase()} ${bank.toUpperCase()}: ${formatRp(nominal)}\nKet: ${keterangan}`, keyboardBawah);
       } 
-      
-      // 2. Shorthand Catat Bon
       else if (command === 'bon') {
         const bank = args[1].toLowerCase();
-        const nama = args.slice(2, -1).join(' ').toLowerCase(); // Nama distandarkan huruf kecil
+        const nama = args.slice(2, -1).join(' ').toLowerCase(); 
         
-        // Ditambahkan status 'aktif'
         dataTransaksi = { ...dataTransaksi, jenis: 'kasbon', rekening: bank, nama_peminjam: nama, status: 'aktif' };
         await db.collection('transaksi').add(dataTransaksi);
         
         await sendMessage(chatId, `📝 <b>KASBON TERCATAT!</b>\nNama: ${nama}\nDari: ${bank.toUpperCase()}\nNominal: ${formatRp(nominal)}`, keyboardBawah);
       } 
-      
-      // 3. Shorthand Lunas Bon (Potong Gaji)
       else if (command === 'lunas') {
         const namaTarget = args.slice(1).join(' ').toLowerCase();
-        const snapshot = await db.collection('transaksi').where('jenis', '==', 'kasbon').where('nama_peminjam', '==', namaTarget).where('status', '==', 'aktif').get();
+        // FIX: Mengambil semua kasbon dengan nama terkait (baik lama maupun baru)
+        const snapshot = await db.collection('transaksi').where('jenis', '==', 'kasbon').where('nama_peminjam', '==', namaTarget).get();
         
-        if (snapshot.empty) {
-          await sendMessage(chatId, `⚠️ Tidak ada catatan kasbon aktif untuk karyawan bernama <b>${namaTarget}</b>.`);
+        let totalDilunasi = 0;
+        const batch = db.batch();
+        
+        snapshot.docs.forEach(doc => {
+          const trx = doc.data();
+          if (trx.status !== 'lunas') {
+            totalDilunasi += trx.nominal;
+            batch.update(doc.ref, { status: 'lunas' });
+          }
+        });
+
+        if (totalDilunasi === 0) {
+          await sendMessage(chatId, `⚠️ Tidak ada catatan kasbon aktif untuk <b>${namaTarget}</b>.`);
           return res.status(200).send('OK');
         }
 
-        const batch = db.batch();
-        let totalDilunasi = 0;
-        snapshot.docs.forEach(doc => {
-          totalDilunasi += doc.data().nominal;
-          batch.update(doc.ref, { status: 'lunas' });
-        });
         await batch.commit();
-
-        await sendMessage(chatId, `✅ <b>KASBON SELESAI (POTONG GAJI)</b>\nSeluruh kasbon atas nama <b>${namaTarget}</b> senilai total ${formatRp(totalDilunasi)} telah direset menjadi lunas.\n*(Saldo ATM tidak berubah).*`, keyboardBawah);
+        await sendMessage(chatId, `✅ <b>KASBON SELESAI (POTONG GAJI)</b>\nSeluruh kasbon <b>${namaTarget}</b> senilai total ${formatRp(totalDilunasi)} telah dilunaskan.`, keyboardBawah);
       }
-
-      // 4. Shorthand Cek Bon Khusus
       else if (command === 'cekbon') {
         const namaTarget = args.slice(1).join(' ').toLowerCase();
-        let query = db.collection('transaksi').where('jenis', '==', 'kasbon').where('status', '==', 'aktif');
+        // FIX: Mengambil semua data kasbon tanpa memfilter status 'aktif' dari database
+        let query = db.collection('transaksi').where('jenis', '==', 'kasbon');
         if (namaTarget) query = query.where('nama_peminjam', '==', namaTarget);
         
         const snapshot = await query.get();
-        if (snapshot.empty) {
-          await sendMessage(chatId, namaTarget ? `Tidak ada kasbon aktif untuk ${namaTarget}.` : `Semua kasbon karyawan sudah lunas/kosong.`);
-          return res.status(200).send('OK');
-        }
-
+        
         let totalSeluruh = 0;
         let rekapNama = {};
         let teksBalasan = namaTarget ? `<b>📋 RINCIAN KASBON: ${namaTarget.toUpperCase()}</b>\n\n` : `<b>📋 REKAP SELURUH KASBON AKTIF</b>\n\n`;
 
         snapshot.forEach(doc => {
           const trx = doc.data();
+          // Filter data yang lunas dilewati di sini agar data lama tetap terbaca
+          if (trx.status === 'lunas') return; 
+
           const n = trx.nama_peminjam;
           const nom = trx.nominal;
           totalSeluruh += nom;
@@ -295,13 +296,16 @@ module.exports = async (req, res) => {
           if (!rekapNama[n]) rekapNama[n] = 0;
           rekapNama[n] += nom;
 
-          // Jika mencari nama spesifik, tampilkan per tanggal
           if (namaTarget) {
             teksBalasan += `- [${formatTanggal(trx.waktu)}] : ${formatRp(nom)}\n`;
           }
         });
 
-        // Jika tidak mencari nama spesifik, tampilkan total per orang
+        if (totalSeluruh === 0) {
+          await sendMessage(chatId, namaTarget ? `Tidak ada kasbon aktif untuk ${namaTarget}.` : `Semua kasbon karyawan sudah lunas/kosong.`);
+          return res.status(200).send('OK');
+        }
+
         if (!namaTarget) {
           for (const [p, nom] of Object.entries(rekapNama)) {
             teksBalasan += `👤 <b>${p.toUpperCase()}</b>: ${formatRp(nom)}\n`;
@@ -311,8 +315,6 @@ module.exports = async (req, res) => {
         teksBalasan += `\n💰 <b>Total Terhutang:</b> ${formatRp(totalSeluruh)}`;
         await sendMessage(chatId, teksBalasan);
       }
-
-      // 5. Shorthand Mutasi
       else if (command === 'tf') {
         const dari = args[1].toLowerCase();
         const ke = args[3].toLowerCase();
