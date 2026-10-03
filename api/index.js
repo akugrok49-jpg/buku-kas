@@ -64,7 +64,7 @@ module.exports = async (req, res) => {
 
   try {
     // ==========================================
-    // A. LOGIKA TOMBOL INLINE (Hapus & Paginasi)
+    // A. LOGIKA TOMBOL INLINE
     // ==========================================
     if (update.callback_query) {
       const callback = update.callback_query;
@@ -74,30 +74,55 @@ module.exports = async (req, res) => {
 
       await axios.post(`${apiUrl}/answerCallbackQuery`, { callback_query_id: callback.id });
 
-      if (data === 'konfirmasi_reset') {
-        await editMessage(chatId, messageId, '⚠️ <b>PERINGATAN BAHAYA</b> ⚠️\nApakah Anda YAKIN ingin menghapus <b>SELURUH CATATAN</b>?', {
-          inline_keyboard: [[{ text: '✅ YA, HAPUS SEMUA DATA', callback_data: 'eksekusi_reset' }], [{ text: '❌ BATALKAN', callback_data: 'batal_reset' }]]
+      // --- JALUR 1: RESET SALDO SAJA ---
+      if (data === 'konfirmasi_reset_saldo') {
+        await editMessage(chatId, messageId, '⚠️ <b>RESET SALDO ATM</b> ⚠️\nApakah Anda yakin ingin mengosongkan riwayat uang masuk/keluar? <b>(Catatan Kasbon Anda akan tetap aman)</b>.', {
+          inline_keyboard: [[{ text: '✅ YA, KOSONGKAN SALDO', callback_data: 'eksekusi_reset_saldo' }], [{ text: '❌ BATALKAN', callback_data: 'batal_reset' }]]
         });
       }
-      else if (data === 'eksekusi_reset') {
+      else if (data === 'eksekusi_reset_saldo') {
         const snapshot = await db.collection('transaksi').get();
+        const batch = db.batch();
+        snapshot.docs.forEach((doc) => {
+          if (doc.data().jenis === 'kasbon') {
+            // Putuskan hubungan dengan ATM agar tidak memotong saldo baru
+            batch.update(doc.ref, { rekening: 'reset' });
+          } else {
+            // Hapus data masuk/keluar/mutasi
+            batch.delete(doc.ref);
+          }
+        });
+        await batch.commit();
+        await editMessage(chatId, messageId, '✅ <b>SALDO BERHASIL DIRESET</b>\nCatatan ATM telah dikosongkan. (Catatan Kasbon tetap aman).');
+      }
+
+      // --- JALUR 2: RESET KASBON SAJA ---
+      else if (data === 'konfirmasi_reset_bon') {
+        await editMessage(chatId, messageId, '⚠️ <b>HAPUS SEMUA KASBON</b> ⚠️\nApakah Anda YAKIN ingin menghapus <b>SELURUH CATATAN KASBON</b> karyawan secara permanen?', {
+          inline_keyboard: [[{ text: '✅ YA, HAPUS SEMUA BON', callback_data: 'eksekusi_reset_bon' }], [{ text: '❌ BATALKAN', callback_data: 'batal_reset' }]]
+        });
+      }
+      else if (data === 'eksekusi_reset_bon') {
+        const snapshot = await db.collection('transaksi').where('jenis', '==', 'kasbon').get();
         const batch = db.batch();
         snapshot.docs.forEach((doc) => batch.delete(doc.ref));
         await batch.commit();
-        await editMessage(chatId, messageId, '✅ <b>DATABASE BERHASIL DIRESET</b>\nSeluruh catatan telah dihapus. Saldo kembali Rp0.');
+        await editMessage(chatId, messageId, '✅ <b>SELURUH KASBON DIHAPUS</b>\nSemua riwayat hutang karyawan telah dikosongkan.');
       }
+
+      // --- BATALKAN RESET ---
       else if (data === 'batal_reset') {
-        await editMessage(chatId, messageId, '✅ Proses reset dibatalkan. Data Anda aman.');
+        await editMessage(chatId, messageId, '✅ Proses dibatalkan. Data Anda aman.');
       }
       
-      // LOGIKA TOMBOL HAPUS DATA
+      // --- HAPUS SATUAN ---
       else if (data.startsWith('del_')) {
         const docId = data.split('_')[1];
         await db.collection('transaksi').doc(docId).delete();
-        await editMessage(chatId, messageId, '✅ <b>Satu Transaksi berhasil dihapus!</b>\nJika ingin melihat perubahan, silakan buka ulang menu Riwayat.');
+        await editMessage(chatId, messageId, '✅ <b>Satu Transaksi berhasil dihapus!</b>\nBuka ulang menu Riwayat untuk melihat perubahannya.');
       }
       
-      // LOGIKA HALAMAN RIWAYAT
+      // --- HALAMAN RIWAYAT ---
       else if (data.startsWith('page_')) {
         const parts = data.split('_');
         const kategori = parts[1];
@@ -107,7 +132,7 @@ module.exports = async (req, res) => {
         let items = [];
         snapshot.forEach(doc => {
           const trx = doc.data();
-          if (trx.jenis === kategori) items.push({ id: doc.id, ...trx }); // Simpan ID untuk fungsi Hapus
+          if (trx.jenis === kategori) items.push({ id: doc.id, ...trx });
         });
 
         const perPage = 10;
@@ -116,7 +141,7 @@ module.exports = async (req, res) => {
         const currentItems = items.slice(pageIndex * perPage, (pageIndex + 1) * perPage);
 
         let teksRiwayat = `<b>📋 RIWAYAT ${kategori.toUpperCase()} (Hal ${pageIndex + 1}/${totalPages})</b>\n\n`;
-        let keyboardHapus = [];
+        let keyboardTombol = [];
 
         if (currentItems.length === 0) {
           teksRiwayat += "<i>Belum ada catatan di kategori ini.</i>";
@@ -126,16 +151,17 @@ module.exports = async (req, res) => {
             const tgl = formatTanggal(trx.waktu);
             let ket = trx.keterangan || trx.nama_peminjam || `${trx.dari_rekening} -> ${trx.ke_rekening}`;
             let status = trx.status === 'lunas' ? ' <i>(Lunas)</i>' : '';
-            let rek = trx.rekening ? trx.rekening.toUpperCase() : '';
             
-            teksRiwayat += `${nomor}. [${tgl}] <b>${rek}</b>: ${formatRp(trx.nominal)}${status}\n   └ <i>Ket: ${ket}</i>\n\n`;
+            // Jangan tampilkan nama bank jika kasbon berasal dari periode sebelum reset saldo
+            let rek = (trx.rekening && trx.rekening !== 'reset') ? ` <b>${trx.rekening.toUpperCase()}</b>:` : ':';
+            
+            teksRiwayat += `${nomor}. [${tgl}]${rek} ${formatRp(trx.nominal)}${status}\n   └ <i>Ket: ${ket}</i>\n\n`;
 
-            // Susun 2 tombol hapus per baris agar rapi
             let btn = { text: `🗑 Hps ${nomor}`, callback_data: `del_${trx.id}` };
-            if (keyboardHapus.length === 0 || keyboardHapus[keyboardHapus.length - 1].length === 2) {
-              keyboardHapus.push([btn]);
+            if (keyboardTombol.length === 0 || keyboardTombol[keyboardTombol.length - 1].length === 2) {
+              keyboardTombol.push([btn]);
             } else {
-              keyboardHapus[keyboardHapus.length - 1].push(btn);
+              keyboardTombol[keyboardTombol.length - 1].push(btn);
             }
           });
         }
@@ -143,9 +169,14 @@ module.exports = async (req, res) => {
         let navButtons = [];
         if (pageIndex > 0) navButtons.push({ text: '⬅️ Prev', callback_data: `page_${kategori}_${pageIndex - 1}` });
         if (pageIndex < totalPages - 1) navButtons.push({ text: 'Next ➡️', callback_data: `page_${kategori}_${pageIndex + 1}` });
-        if (navButtons.length > 0) keyboardHapus.push(navButtons);
+        if (navButtons.length > 0) keyboardTombol.push(navButtons);
 
-        await editMessage(chatId, messageId, teksRiwayat, { inline_keyboard: keyboardHapus });
+        // Tambahkan tombol Hapus Semua Bon jika ini menu Kasbon
+        if (kategori === 'kasbon') {
+          keyboardTombol.push([{ text: '⚠ Hapus Semua Kasbon', callback_data: 'konfirmasi_reset_bon' }]);
+        }
+
+        await editMessage(chatId, messageId, teksRiwayat, { inline_keyboard: keyboardTombol });
       }
 
       return res.status(200).send('OK');
@@ -204,7 +235,6 @@ module.exports = async (req, res) => {
             if (trx.rekening === 'b') saldoBrimo -= nom;
             if (trx.rekening === 's') saldoSea -= nom;
             
-            // FIX: Menghitung kasbon lama (yg statusnya undefined) dan yg 'aktif'
             if (trx.jenis === 'kasbon' && trx.status !== 'lunas') totalKasbon += nom;
           } else if (trx.jenis === 'mutasi') {
             if (trx.dari_rekening === 'b') saldoBrimo -= nom;
@@ -215,10 +245,13 @@ module.exports = async (req, res) => {
         });
 
         const teksSaldo = `<b>💰 LAPORAN KEUANGAN KASIR</b>\n\n💳 <b>Sisa Saldo Brimo:</b> ${formatRp(saldoBrimo)}\n💳 <b>Sisa Saldo SeaBank:</b> ${formatRp(saldoSea)}\n\n📝 <b>Total Kasbon Beredar:</b> ${formatRp(totalKasbon)}`;
-        await sendMessage(chatId, teksSaldo, { inline_keyboard: [[{ text: '⚠ Reset Semua Saldo & Catatan', callback_data: 'konfirmasi_reset' }]] });
+        await sendMessage(chatId, teksSaldo, { inline_keyboard: [[{ text: '⚠ Reset Catatan Saldo ATM', callback_data: 'konfirmasi_reset_saldo' }]] });
         return res.status(200).send('OK');
       }
 
+      // ==========================================
+      // C. LOGIKA SHORTHAND (Parsing)
+      // ==========================================
       const args = rawText.split(' ');
       const command = args[0].toLowerCase();
       const nominal = parseNominal(args[args.length - 1]);
@@ -250,7 +283,6 @@ module.exports = async (req, res) => {
       } 
       else if (command === 'lunas') {
         const namaTarget = args.slice(1).join(' ').toLowerCase();
-        // FIX: Mengambil semua kasbon dengan nama terkait (baik lama maupun baru)
         const snapshot = await db.collection('transaksi').where('jenis', '==', 'kasbon').where('nama_peminjam', '==', namaTarget).get();
         
         let totalDilunasi = 0;
@@ -274,7 +306,6 @@ module.exports = async (req, res) => {
       }
       else if (command === 'cekbon') {
         const namaTarget = args.slice(1).join(' ').toLowerCase();
-        // FIX: Mengambil semua data kasbon tanpa memfilter status 'aktif' dari database
         let query = db.collection('transaksi').where('jenis', '==', 'kasbon');
         if (namaTarget) query = query.where('nama_peminjam', '==', namaTarget);
         
@@ -286,7 +317,6 @@ module.exports = async (req, res) => {
 
         snapshot.forEach(doc => {
           const trx = doc.data();
-          // Filter data yang lunas dilewati di sini agar data lama tetap terbaca
           if (trx.status === 'lunas') return; 
 
           const n = trx.nama_peminjam;
