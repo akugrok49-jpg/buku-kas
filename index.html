@@ -3,29 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Buku Kas</title>
-  <!-- Tailwind CSS untuk Desain -->
+  <title>Buku KAS</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- SheetJS untuk Export Excel -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   
-  <!-- Firebase SDK (Versi 8 agar lebih mudah dikonfigurasi dalam satu file) -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
   <style>
-    /* CSS Khusus untuk memisahkan tampilan HP dan Laptop */
     .tab-content { display: none; }
     .tab-content.active { display: block; }
     
     @media (max-width: 768px) {
-      /* Mode HP: Menu di bawah */
       #sidebar { display: none; }
       #bottom-nav { display: flex; }
       #main-content { padding-bottom: 80px; }
     }
     @media (min-width: 769px) {
-      /* Mode Laptop: Menu di kiri */
       #bottom-nav { display: none; }
       #sidebar { display: flex; }
       .app-container { flex-direction: row; display: flex; height: 100vh; }
@@ -33,7 +27,7 @@
     }
   </style>
 </head>
-<body class="bg-gray-50 text-gray-800 font-sans">
+<body class="bg-gray-50 text-gray-800 font-sans relative">
 
   <!-- LAYAR KUNCI (PIN) -->
   <div id="pin-screen" class="fixed inset-0 bg-gray-900 flex items-center justify-center z-50">
@@ -45,15 +39,77 @@
     </div>
   </div>
 
-  <!-- APLIKASI UTAMA (Disembunyikan sebelum PIN benar) -->
+  <!-- MODAL TAMBAH TRANSAKSI -->
+  <div id="modal-tambah" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 px-4">
+    <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+      <h2 class="text-xl font-bold mb-4 border-b pb-2">➕ Tambah Catatan Baru</h2>
+      <form id="form-transaksi" onsubmit="simpanTransaksi(event)">
+        
+        <div class="mb-3">
+          <label class="block text-sm font-semibold mb-1">Jenis Operasional</label>
+          <select id="form-jenis" onchange="ubahFormTambah()" class="w-full border p-2 rounded" required>
+            <option value="masuk">📥 Dana Masuk</option>
+            <option value="keluar">📤 Pengeluaran Umum</option>
+            <option value="kasbon">📝 Kasbon Karyawan</option>
+            <option value="mutasi">🔄 Mutasi / Transfer</option>
+          </select>
+        </div>
+
+        <div id="div-rekening" class="mb-3">
+          <label class="block text-sm font-semibold mb-1">Pilih Rekening</label>
+          <select id="form-rekening" class="w-full border p-2 rounded">
+            <option value="b">💳 Brimo</option>
+            <option value="s">💳 SeaBank</option>
+          </select>
+        </div>
+
+        <div id="div-mutasi" class="mb-3 hidden flex gap-2">
+          <div class="w-1/2">
+            <label class="block text-sm font-semibold mb-1">Dari</label>
+            <select id="form-dari" class="w-full border p-2 rounded">
+              <option value="b">Brimo</option>
+              <option value="s">SeaBank</option>
+            </select>
+          </div>
+          <div class="w-1/2">
+            <label class="block text-sm font-semibold mb-1">Ke</label>
+            <select id="form-ke" class="w-full border p-2 rounded">
+              <option value="s">SeaBank</option>
+              <option value="b">Brimo</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="div-keterangan" class="mb-3">
+          <label id="label-keterangan" class="block text-sm font-semibold mb-1">Keterangan</label>
+          <input type="text" id="form-keterangan" class="w-full border p-2 rounded" placeholder="Cth: Beli spidol" autocomplete="off">
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-semibold mb-1">Nominal (Rp)</label>
+          <input type="number" id="form-nominal" class="w-full border p-2 rounded" placeholder="Tanpa titik (Cth: 500000)" required>
+        </div>
+
+        <div class="flex justify-end gap-2 mt-6">
+          <button type="button" onclick="tutupModalTambah()" class="px-4 py-2 bg-gray-300 rounded font-semibold hover:bg-gray-400">Batal</button>
+          <button type="submit" id="btn-simpan" class="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700">Simpan Data</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- APLIKASI UTAMA -->
   <div id="app-container" class="app-container hidden">
     
-    <!-- SIDEBAR (Khusus Laptop) -->
-    <nav id="sidebar" class="w-64 bg-white shadow-lg flex-col p-4 z-10">
-      <h1 class="text-xl font-bold mb-8 text-blue-600 border-b pb-4">BUKU Kas</h1>
-      <button onclick="bukaTab('dashboard')" class="text-left p-3 mb-2 rounded hover:bg-blue-50 font-semibold" id="btn-side-dashboard">📊 Dashboard</button>
-      <button onclick="bukaTab('buku-kas')" class="text-left p-3 mb-2 rounded hover:bg-blue-50 font-semibold" id="btn-side-buku-kas">📓 Buku Kas</button>
-      <button onclick="bukaTab('rekap-kasbon')" class="text-left p-3 mb-2 rounded hover:bg-blue-50 font-semibold" id="btn-side-rekap-kasbon">📝 Rekap Kasbon</button>
+    <!-- SIDEBAR -->
+    <nav id="sidebar" class="w-64 bg-white shadow-lg flex-col p-4 z-10 relative">
+      <h1 class="text-xl font-bold mb-8 text-blue-600 border-b pb-4">BUKU KAS</h1>
+      <button onclick="bukaTab('dashboard')" class="text-left p-3 mb-2 rounded hover:bg-blue-50 font-semibold flex items-center gap-2" id="btn-side-dashboard"><span>📊</span> Dashboard</button>
+      <button onclick="bukaTab('buku-kas')" class="text-left p-3 mb-2 rounded hover:bg-blue-50 font-semibold flex items-center gap-2" id="btn-side-buku-kas"><span>📓</span> Buku Kas</button>
+      <button onclick="bukaTab('rekap-kasbon')" class="text-left p-3 mb-2 rounded hover:bg-blue-50 font-semibold flex items-center gap-2" id="btn-side-rekap-kasbon"><span>📝</span> Rekap Kasbon</button>
+      
+      <!-- Tombol Tambah di Sidebar -->
+      <button onclick="bukaModalTambah()" class="mt-auto bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 w-full shadow-lg">➕ Tambah Data</button>
     </nav>
 
     <!-- KONTEN UTAMA -->
@@ -76,13 +132,18 @@
             <h3 class="text-3xl font-bold text-gray-800 mt-2" id="total-kasbon">Rp 0</h3>
           </div>
         </div>
+        <!-- Tombol Pintasan Mobile (Muncul di HP) -->
+        <button onclick="bukaModalTambah()" class="md:hidden mt-6 bg-blue-600 text-white p-4 rounded-lg font-bold hover:bg-blue-700 w-full shadow-lg text-lg">➕ Buat Catatan Baru</button>
       </section>
 
       <!-- TAB 2: BUKU KAS -->
       <section id="buku-kas" class="tab-content">
-        <div class="flex justify-between items-center mb-6">
-          <h2 class="text-2xl font-bold">📓 Riwayat Transaksi</h2>
-          <button onclick="exportExcel()" class="bg-green-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-green-700 text-sm">⬇️ Export Excel</button>
+        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-3">
+          <h2 class="text-2xl font-bold w-full md:w-auto">📓 Riwayat Transaksi</h2>
+          <div class="flex gap-2 w-full md:w-auto">
+            <button onclick="bukaModalTambah()" class="flex-1 md:flex-none bg-blue-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-700 text-sm">➕ Tambah</button>
+            <button onclick="exportExcel()" class="flex-1 md:flex-none bg-green-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-green-700 text-sm">⬇️ Export Excel</button>
+          </div>
         </div>
         <div class="bg-white rounded-lg shadow-md overflow-x-auto">
           <table class="w-full text-left border-collapse">
@@ -96,7 +157,6 @@
               </tr>
             </thead>
             <tbody id="tabel-transaksi" class="text-gray-700 text-sm">
-              <!-- Data akan diisi oleh JavaScript -->
             </tbody>
           </table>
         </div>
@@ -107,14 +167,13 @@
         <h2 class="text-2xl font-bold mb-6">📝 Daftar Bon Karyawan (Aktif)</h2>
         <div class="bg-white rounded-lg shadow-md overflow-hidden">
           <ul id="daftar-kasbon" class="divide-y divide-gray-200">
-            <!-- Data akan diisi oleh JavaScript -->
           </ul>
         </div>
       </section>
 
     </main>
 
-    <!-- BOTTOM NAVIGATION (Khusus HP) -->
+    <!-- BOTTOM NAVIGATION -->
     <nav id="bottom-nav" class="fixed bottom-0 w-full bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.1)] flex justify-around p-3 z-10 border-t">
       <button onclick="bukaTab('dashboard')" class="flex flex-col items-center text-blue-600" id="btn-bot-dashboard">
         <span class="text-xl">📊</span><span class="text-xs font-semibold">Dash</span>
@@ -130,27 +189,129 @@
 
   <script>
     // ==========================================
-    // 1. SISTEM KEAMANAN PIN
+    // 1. PENGATURAN PIN (GANTI DENGAN PIN ANDA)
     // ==========================================
-    const PIN_RAHASIA = "123456"; // Ganti dengan PIN yang Anda inginkan
+    const PIN_RAHASIA = "123456"; 
     
     function cekPin() {
       const input = document.getElementById('pin-input').value;
       if (input === PIN_RAHASIA) {
         document.getElementById('pin-screen').style.display = 'none';
         document.getElementById('app-container').classList.remove('hidden');
-        inisialisasiData(); // Panggil data dari database setelah PIN benar
+        inisialisasiData(); 
       } else {
         document.getElementById('pin-error').classList.remove('hidden');
       }
     }
 
-    // Navigasi Tab
+    // ==========================================
+    // 2. KONFIGURASI FIREBASE (Wajib Diisi Ulang)
+    // ==========================================
+    const firebaseConfig = {
+      apiKey:  "AIzaSyBhsfjjfpFw2o4uuPdWGmb1EQLuWjBVedY",
+      authDomain: "buku-kas-17.firebaseapp.com",
+      projectId:  "buku-kas-17"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // ==========================================
+    // 3. LOGIKA FORM TAMBAH DATA
+    // ==========================================
+    function bukaModalTambah() {
+      document.getElementById('modal-tambah').classList.remove('hidden');
+      document.getElementById('modal-tambah').classList.add('flex');
+      document.getElementById('form-transaksi').reset();
+      ubahFormTambah(); 
+    }
+
+    function tutupModalTambah() {
+      document.getElementById('modal-tambah').classList.add('hidden');
+      document.getElementById('modal-tambah').classList.remove('flex');
+    }
+
+    function ubahFormTambah() {
+      const jenis = document.getElementById('form-jenis').value;
+      const divRekening = document.getElementById('div-rekening');
+      const divMutasi = document.getElementById('div-mutasi');
+      const divKet = document.getElementById('div-keterangan');
+      const labelKet = document.getElementById('label-keterangan');
+      const inputKet = document.getElementById('form-keterangan');
+
+      if (jenis === 'mutasi') {
+        divRekening.classList.add('hidden');
+        divMutasi.classList.remove('hidden');
+        divKet.classList.add('hidden');
+        inputKet.required = false;
+      } else if (jenis === 'kasbon') {
+        divRekening.classList.remove('hidden');
+        divMutasi.classList.add('hidden');
+        divKet.classList.remove('hidden');
+        labelKet.innerText = 'Nama Karyawan (Peminjam)';
+        inputKet.placeholder = 'Cth: alpin';
+        inputKet.required = true;
+      } else {
+        divRekening.classList.remove('hidden');
+        divMutasi.classList.add('hidden');
+        divKet.classList.remove('hidden');
+        labelKet.innerText = 'Keterangan';
+        inputKet.placeholder = 'Cth: Beli spidol';
+        inputKet.required = true;
+      }
+    }
+
+    async function simpanTransaksi(event) {
+      event.preventDefault(); // Mencegah web ter-refresh otomatis saat disubmit
+      const jenis = document.getElementById('form-jenis').value;
+      const nominal = Number(document.getElementById('form-nominal').value);
+      const btnSimpan = document.getElementById('btn-simpan');
+      
+      btnSimpan.innerText = "Menyimpan...";
+      btnSimpan.disabled = true;
+
+      // Siapkan wadah data dengan timestamp server
+      let dataTransaksi = {
+        waktu: firebase.firestore.FieldValue.serverTimestamp(),
+        nominal: nominal
+      };
+
+      if (jenis === 'mutasi') {
+        dataTransaksi.jenis = 'mutasi';
+        dataTransaksi.dari_rekening = document.getElementById('form-dari').value;
+        dataTransaksi.ke_rekening = document.getElementById('form-ke').value;
+      } else {
+        dataTransaksi.jenis = jenis;
+        dataTransaksi.rekening = document.getElementById('form-rekening').value;
+        
+        const keterangan = document.getElementById('form-keterangan').value;
+        if (jenis === 'kasbon') {
+          dataTransaksi.nama_peminjam = keterangan.toLowerCase();
+          dataTransaksi.status = 'aktif';
+        } else {
+          dataTransaksi.keterangan = keterangan;
+        }
+      }
+
+      try {
+        await db.collection("transaksi").add(dataTransaksi);
+        tutupModalTambah();
+      } catch (error) {
+        alert("Gagal menyimpan data ke database. Cek koneksi Anda.");
+        console.error(error);
+      } finally {
+        btnSimpan.innerText = "Simpan Data";
+        btnSimpan.disabled = false;
+      }
+    }
+
+    // ==========================================
+    // 4. LOGIKA APLIKASI UTAMA (REAL-TIME)
+    // ==========================================
     function bukaTab(tabName) {
       document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
       document.getElementById(tabName).classList.add('active');
       
-      // Ubah warna ikon di HP
       const botBtns = ['dashboard', 'buku-kas', 'rekap-kasbon'];
       botBtns.forEach(b => {
         document.getElementById(`btn-bot-${b}`).classList.replace('text-blue-600', 'text-gray-500');
@@ -158,28 +319,10 @@
       document.getElementById(`btn-bot-${tabName}`).classList.replace('text-gray-500', 'text-blue-600');
     }
 
-    // ==========================================
-    // 2. KONFIGURASI FIREBASE
-    // ==========================================
-    // GANTI BAGIAN INI DENGAN KODE DARI LANGKAH 1
-    const firebaseConfig = {
-      apiKey: "AIzaSyBhsfjjfpFw2o4uuPdWGmb1EQLuWjBVedY",
-      authDomain: "buku-kas-17.firebaseapp.com",
-      projectId: "buku-kas-17"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-
-    // ==========================================
-    // 3. LOGIKA APLIKASI (REAL-TIME)
-    // ==========================================
     const formatRp = (angka) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka);
-    
-    let semuaData = []; // Untuk wadah export excel
+    let semuaData = []; 
 
     function inisialisasiData() {
-      // Dengarkan perubahan database secara LIVE
       db.collection("transaksi").orderBy("waktu", "desc").onSnapshot((snapshot) => {
         semuaData = [];
         let saldoBrimo = 0, saldoSea = 0, totalKasbon = 0;
@@ -191,14 +334,12 @@
           const trx = doc.data();
           const nom = trx.nominal || 0;
           
-          // Data Waktu
-          let tglStr = "Belum Tercatat";
+          let tglStr = "Menyimpan..."; // Feedback instan saat tombol simpan baru saja ditekan
           if (trx.waktu) {
             const d = trx.waktu.toDate();
-            tglStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()} ${d.getHours()}:${d.getMinutes()}`;
+            tglStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
           }
 
-          // PERHITUNGAN SALDO (Sama dengan logika di Telegram)
           if (trx.jenis === 'masuk') {
             if (trx.rekening === 'b') saldoBrimo += nom;
             if (trx.rekening === 's') saldoSea += nom;
@@ -213,14 +354,12 @@
             if (trx.ke_rekening === 's') saldoSea += nom;
           }
 
-          // REKAP KASBON
           if (trx.jenis === 'kasbon' && trx.status !== 'lunas') {
             const n = trx.nama_peminjam || 'Tanpa Nama';
             if(!rekapNama[n]) rekapNama[n] = 0;
             rekapNama[n] += nom;
           }
 
-          // FORMAT TABEL BUKU KAS
           let kategori = trx.jenis.toUpperCase();
           let badgeColor = trx.jenis === 'masuk' ? 'bg-green-100 text-green-800' : (trx.jenis === 'keluar' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800');
           let ket = trx.keterangan || trx.nama_peminjam || `${trx.dari_rekening} -> ${trx.ke_rekening}`;
@@ -231,26 +370,23 @@
             <tr class="border-b hover:bg-gray-50">
               <td class="py-3 px-4">${tglStr}</td>
               <td class="py-3 px-4"><span class="px-2 py-1 rounded text-xs font-bold ${badgeColor}">${kategori}${bank}</span></td>
-              <td class="py-3 px-4">${ket}${statusKasbon}</td>
+              <td class="py-3 px-4 capitalize">${ket}${statusKasbon}</td>
               <td class="py-3 px-4 font-semibold">${formatRp(nom)}</td>
               <td class="py-3 px-4 text-center">
-                <button onclick="editData('${id}', ${nom})" class="text-blue-500 hover:text-blue-700 mr-3">✏️</button>
-                <button onclick="hapusData('${id}')" class="text-red-500 hover:text-red-700">🗑️</button>
+                <button onclick="editData('${id}', ${nom})" class="text-blue-500 hover:text-blue-700 mr-3 text-lg">✏️</button>
+                <button onclick="hapusData('${id}')" class="text-red-500 hover:text-red-700 text-lg">🗑️</button>
               </td>
             </tr>
           `;
 
-          // Simpan data untuk Excel
           semuaData.push({ Waktu: tglStr, Kategori: kategori, Bank: bank, Keterangan: ket, Nominal: nom, Status: trx.status || '-' });
         });
 
-        // UPDATE TAMPILAN DASHBOARD
         document.getElementById('saldo-brimo').innerText = formatRp(saldoBrimo);
         document.getElementById('saldo-sea').innerText = formatRp(saldoSea);
         document.getElementById('total-kasbon').innerText = formatRp(totalKasbon);
         document.getElementById('tabel-transaksi').innerHTML = htmlTransaksi || `<tr><td colspan="5" class="text-center py-4">Belum ada transaksi</td></tr>`;
 
-        // UPDATE TAMPILAN REKAP KASBON
         let htmlKasbon = '';
         for (const [nama, nominal] of Object.entries(rekapNama)) {
           htmlKasbon += `
@@ -264,11 +400,8 @@
       });
     }
 
-    // ==========================================
-    // 4. FUNGSI EDIT, HAPUS & EXPORT
-    // ==========================================
     async function hapusData(id) {
-      if (confirm("Apakah Anda yakin ingin menghapus data ini?")) {
+      if (confirm("Yakin ingin menghapus baris ini?")) {
         await db.collection("transaksi").doc(id).delete();
       }
     }
