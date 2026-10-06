@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buku Kasir Bos</title>
+  <!-- Tailwind CSS untuk Desain -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS untuk Export Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  
+  <!-- Firebase SDK (Versi 8 agar lebih mudah dikonfigurasi dalam satu file) -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+  <style>
+    /* CSS Khusus untuk memisahkan tampilan HP dan Laptop */
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    
+    @media (max-width: 768px) {
+      /* Mode HP: Menu di bawah */
+      #sidebar { display: none; }
+      #bottom-nav { display: flex; }
+      #main-content { padding-bottom: 80px; }
+    }
+    @media (min-width: 769px) {
+      /* Mode Laptop: Menu di kiri */
+      #bottom-nav { display: none; }
+      #sidebar { display: flex; }
+      .app-container { flex-direction: row; display: flex; height: 100vh; }
+      #main-content { flex: 1; height: 100vh; overflow-y: auto; }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+
+  <!-- LAYAR KUNCI (PIN) -->
+  <div id="pin-screen" class="fixed inset-0 bg-gray-900 flex items-center justify-center z-50">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-80 text-center">
+      <h2 class="text-2xl font-bold mb-4">Gembok Keamanan</h2>
+      <input type="password" id="pin-input" class="w-full border-2 border-gray-300 p-3 rounded-lg text-center text-xl mb-4" placeholder="Masukkan PIN" inputmode="numeric">
+      <button onclick="cekPin()" class="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700">Masuk</button>
+      <p id="pin-error" class="text-red-500 mt-2 hidden">PIN Salah!</p>
+    </div>
+  </div>
+
+  <!-- APLIKASI UTAMA (Disembunyikan sebelum PIN benar) -->
+  <div id="app-container" class="app-container hidden">
+    
+    <!-- SIDEBAR (Khusus Laptop) -->
+    <nav id="sidebar" class="w-64 bg-white shadow-lg flex-col p-4 z-10">
+      <h1 class="text-xl font-bold mb-8 text-blue-600 border-b pb-4">Kasir Bos</h1>
+      <button onclick="bukaTab('dashboard')" class="text-left p-3 mb-2 rounded hover:bg-blue-50 font-semibold" id="btn-side-dashboard">📊 Dashboard</button>
+      <button onclick="bukaTab('buku-kas')" class="text-left p-3 mb-2 rounded hover:bg-blue-50 font-semibold" id="btn-side-buku-kas">📓 Buku Kas</button>
+      <button onclick="bukaTab('rekap-kasbon')" class="text-left p-3 mb-2 rounded hover:bg-blue-50 font-semibold" id="btn-side-rekap-kasbon">📝 Rekap Kasbon</button>
+    </nav>
+
+    <!-- KONTEN UTAMA -->
+    <main id="main-content" class="p-4 md:p-8 w-full">
+      
+      <!-- TAB 1: DASHBOARD -->
+      <section id="dashboard" class="tab-content active">
+        <h2 class="text-2xl font-bold mb-6">📊 Ringkasan Saldo</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-blue-500">
+            <p class="text-gray-500 font-semibold text-sm">Sisa Saldo Brimo</p>
+            <h3 class="text-3xl font-bold text-gray-800 mt-2" id="saldo-brimo">Rp 0</h3>
+          </div>
+          <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-orange-500">
+            <p class="text-gray-500 font-semibold text-sm">Sisa Saldo SeaBank</p>
+            <h3 class="text-3xl font-bold text-gray-800 mt-2" id="saldo-sea">Rp 0</h3>
+          </div>
+          <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-red-500">
+            <p class="text-gray-500 font-semibold text-sm">Total Kasbon Beredar</p>
+            <h3 class="text-3xl font-bold text-gray-800 mt-2" id="total-kasbon">Rp 0</h3>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: BUKU KAS -->
+      <section id="buku-kas" class="tab-content">
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-2xl font-bold">📓 Riwayat Transaksi</h2>
+          <button onclick="exportExcel()" class="bg-green-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-green-700 text-sm">⬇️ Export Excel</button>
+        </div>
+        <div class="bg-white rounded-lg shadow-md overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-gray-100 text-gray-600 uppercase text-sm leading-normal border-b">
+                <th class="py-3 px-4">Waktu</th>
+                <th class="py-3 px-4">Kategori</th>
+                <th class="py-3 px-4">Keterangan / Nama</th>
+                <th class="py-3 px-4">Nominal</th>
+                <th class="py-3 px-4 text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="tabel-transaksi" class="text-gray-700 text-sm">
+              <!-- Data akan diisi oleh JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 3: REKAP KASBON -->
+      <section id="rekap-kasbon" class="tab-content">
+        <h2 class="text-2xl font-bold mb-6">📝 Daftar Bon Karyawan (Aktif)</h2>
+        <div class="bg-white rounded-lg shadow-md overflow-hidden">
+          <ul id="daftar-kasbon" class="divide-y divide-gray-200">
+            <!-- Data akan diisi oleh JavaScript -->
+          </ul>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- BOTTOM NAVIGATION (Khusus HP) -->
+    <nav id="bottom-nav" class="fixed bottom-0 w-full bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.1)] flex justify-around p-3 z-10 border-t">
+      <button onclick="bukaTab('dashboard')" class="flex flex-col items-center text-blue-600" id="btn-bot-dashboard">
+        <span class="text-xl">📊</span><span class="text-xs font-semibold">Dash</span>
+      </button>
+      <button onclick="bukaTab('buku-kas')" class="flex flex-col items-center text-gray-500" id="btn-bot-buku-kas">
+        <span class="text-xl">📓</span><span class="text-xs font-semibold">Kas</span>
+      </button>
+      <button onclick="bukaTab('rekap-kasbon')" class="flex flex-col items-center text-gray-500" id="btn-bot-rekap-kasbon">
+        <span class="text-xl">📝</span><span class="text-xs font-semibold">Kasbon</span>
+      </button>
+    </nav>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. SISTEM KEAMANAN PIN
+    // ==========================================
+    const PIN_RAHASIA = "123456"; // Ganti dengan PIN yang Anda inginkan
+    
+    function cekPin() {
+      const input = document.getElementById('pin-input').value;
+      if (input === PIN_RAHASIA) {
+        document.getElementById('pin-screen').style.display = 'none';
+        document.getElementById('app-container').classList.remove('hidden');
+        inisialisasiData(); // Panggil data dari database setelah PIN benar
+      } else {
+        document.getElementById('pin-error').classList.remove('hidden');
+      }
+    }
+
+    // Navigasi Tab
+    function bukaTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+      document.getElementById(tabName).classList.add('active');
+      
+      // Ubah warna ikon di HP
+      const botBtns = ['dashboard', 'buku-kas', 'rekap-kasbon'];
+      botBtns.forEach(b => {
+        document.getElementById(`btn-bot-${b}`).classList.replace('text-blue-600', 'text-gray-500');
+      });
+      document.getElementById(`btn-bot-${tabName}`).classList.replace('text-gray-500', 'text-blue-600');
+    }
+
+    // ==========================================
+    // 2. KONFIGURASI FIREBASE
+    // ==========================================
+    // GANTI BAGIAN INI DENGAN KODE DARI LANGKAH 1
+    const firebaseConfig = {
+      apiKey: AIzaSyBhsfjjfpFw2o4uuPdWGmb1EQLuWjBVedY,
+      authDomain: buku-kas-17.firebaseapp.com,
+      projectId: buku-kas-17
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // ==========================================
+    // 3. LOGIKA APLIKASI (REAL-TIME)
+    // ==========================================
+    const formatRp = (angka) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka);
+    
+    let semuaData = []; // Untuk wadah export excel
+
+    function inisialisasiData() {
+      // Dengarkan perubahan database secara LIVE
+      db.collection("transaksi").orderBy("waktu", "desc").onSnapshot((snapshot) => {
+        semuaData = [];
+        let saldoBrimo = 0, saldoSea = 0, totalKasbon = 0;
+        let htmlTransaksi = '';
+        let rekapNama = {};
+
+        snapshot.forEach((doc) => {
+          const id = doc.id;
+          const trx = doc.data();
+          const nom = trx.nominal || 0;
+          
+          // Data Waktu
+          let tglStr = "Belum Tercatat";
+          if (trx.waktu) {
+            const d = trx.waktu.toDate();
+            tglStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()} ${d.getHours()}:${d.getMinutes()}`;
+          }
+
+          // PERHITUNGAN SALDO (Sama dengan logika di Telegram)
+          if (trx.jenis === 'masuk') {
+            if (trx.rekening === 'b') saldoBrimo += nom;
+            if (trx.rekening === 's') saldoSea += nom;
+          } else if (trx.jenis === 'keluar' || trx.jenis === 'kasbon') {
+            if (trx.rekening === 'b') saldoBrimo -= nom;
+            if (trx.rekening === 's') saldoSea -= nom;
+            if (trx.jenis === 'kasbon' && trx.status !== 'lunas') totalKasbon += nom;
+          } else if (trx.jenis === 'mutasi') {
+            if (trx.dari_rekening === 'b') saldoBrimo -= nom;
+            if (trx.dari_rekening === 's') saldoSea -= nom;
+            if (trx.ke_rekening === 'b') saldoBrimo += nom;
+            if (trx.ke_rekening === 's') saldoSea += nom;
+          }
+
+          // REKAP KASBON
+          if (trx.jenis === 'kasbon' && trx.status !== 'lunas') {
+            const n = trx.nama_peminjam || 'Tanpa Nama';
+            if(!rekapNama[n]) rekapNama[n] = 0;
+            rekapNama[n] += nom;
+          }
+
+          // FORMAT TABEL BUKU KAS
+          let kategori = trx.jenis.toUpperCase();
+          let badgeColor = trx.jenis === 'masuk' ? 'bg-green-100 text-green-800' : (trx.jenis === 'keluar' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800');
+          let ket = trx.keterangan || trx.nama_peminjam || `${trx.dari_rekening} -> ${trx.ke_rekening}`;
+          let statusKasbon = (trx.jenis === 'kasbon' && trx.status === 'lunas') ? ' (Lunas)' : '';
+          let bank = (trx.rekening && trx.rekening !== 'reset') ? ` [${trx.rekening.toUpperCase()}]` : '';
+
+          htmlTransaksi += `
+            <tr class="border-b hover:bg-gray-50">
+              <td class="py-3 px-4">${tglStr}</td>
+              <td class="py-3 px-4"><span class="px-2 py-1 rounded text-xs font-bold ${badgeColor}">${kategori}${bank}</span></td>
+              <td class="py-3 px-4">${ket}${statusKasbon}</td>
+              <td class="py-3 px-4 font-semibold">${formatRp(nom)}</td>
+              <td class="py-3 px-4 text-center">
+                <button onclick="editData('${id}', ${nom})" class="text-blue-500 hover:text-blue-700 mr-3">✏️</button>
+                <button onclick="hapusData('${id}')" class="text-red-500 hover:text-red-700">🗑️</button>
+              </td>
+            </tr>
+          `;
+
+          // Simpan data untuk Excel
+          semuaData.push({ Waktu: tglStr, Kategori: kategori, Bank: bank, Keterangan: ket, Nominal: nom, Status: trx.status || '-' });
+        });
+
+        // UPDATE TAMPILAN DASHBOARD
+        document.getElementById('saldo-brimo').innerText = formatRp(saldoBrimo);
+        document.getElementById('saldo-sea').innerText = formatRp(saldoSea);
+        document.getElementById('total-kasbon').innerText = formatRp(totalKasbon);
+        document.getElementById('tabel-transaksi').innerHTML = htmlTransaksi || `<tr><td colspan="5" class="text-center py-4">Belum ada transaksi</td></tr>`;
+
+        // UPDATE TAMPILAN REKAP KASBON
+        let htmlKasbon = '';
+        for (const [nama, nominal] of Object.entries(rekapNama)) {
+          htmlKasbon += `
+            <li class="p-4 flex justify-between items-center hover:bg-gray-50">
+              <span class="font-bold text-lg text-gray-800 capitalize">👤 ${nama}</span>
+              <span class="font-semibold text-red-600 bg-red-100 px-3 py-1 rounded-full">${formatRp(nominal)}</span>
+            </li>
+          `;
+        }
+        document.getElementById('daftar-kasbon').innerHTML = htmlKasbon || `<li class="p-4 text-center text-gray-500">Semua kasbon sudah lunas.</li>`;
+      });
+    }
+
+    // ==========================================
+    // 4. FUNGSI EDIT, HAPUS & EXPORT
+    // ==========================================
+    async function hapusData(id) {
+      if (confirm("Apakah Anda yakin ingin menghapus data ini?")) {
+        await db.collection("transaksi").doc(id).delete();
+      }
+    }
+
+    async function editData(id, nominalLama) {
+      const nomBaru = prompt("Masukkan Nominal Baru (Angka Saja):", nominalLama);
+      if (nomBaru !== null && nomBaru !== "") {
+        await db.collection("transaksi").doc(id).update({ nominal: Number(nomBaru) });
+      }
+    }
+
+    function exportExcel() {
+      if(semuaData.length === 0) return alert("Belum ada data untuk diexport!");
+      const ws = XLSX.utils.json_to_sheet(semuaData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Riwayat Transaksi");
+      XLSX.writeFile(wb, "Laporan_Kasir_Bos.xlsx");
+    }
+  </script>
+</body>
+</html>
