@@ -44,7 +44,6 @@
     <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
       <h2 class="text-xl font-bold mb-4 border-b pb-2">➕ Tambah Catatan Baru</h2>
       <form id="form-transaksi" onsubmit="simpanTransaksi(event)">
-        
         <div class="mb-3">
           <label class="block text-sm font-semibold mb-1">Jenis Operasional</label>
           <select id="form-jenis" onchange="ubahFormTambah()" class="w-full border p-2 rounded" required>
@@ -54,7 +53,6 @@
             <option value="mutasi">🔄 Mutasi / Transfer</option>
           </select>
         </div>
-
         <div id="div-rekening" class="mb-3">
           <label class="block text-sm font-semibold mb-1">Pilih Rekening</label>
           <select id="form-rekening" class="w-full border p-2 rounded">
@@ -62,7 +60,6 @@
             <option value="s">💳 SeaBank</option>
           </select>
         </div>
-
         <div id="div-mutasi" class="mb-3 hidden flex gap-2">
           <div class="w-1/2">
             <label class="block text-sm font-semibold mb-1">Dari</label>
@@ -79,22 +76,34 @@
             </select>
           </div>
         </div>
-
         <div id="div-keterangan" class="mb-3">
           <label id="label-keterangan" class="block text-sm font-semibold mb-1">Keterangan</label>
           <input type="text" id="form-keterangan" class="w-full border p-2 rounded" placeholder="Cth: Beli spidol" autocomplete="off">
         </div>
-
         <div class="mb-4">
           <label class="block text-sm font-semibold mb-1">Nominal (Rp)</label>
           <input type="number" id="form-nominal" class="w-full border p-2 rounded" placeholder="Tanpa titik (Cth: 500000)" required>
         </div>
-
         <div class="flex justify-end gap-2 mt-6">
           <button type="button" onclick="tutupModalTambah()" class="px-4 py-2 bg-gray-300 rounded font-semibold hover:bg-gray-400">Batal</button>
           <button type="submit" id="btn-simpan" class="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700">Simpan Data</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- MODAL CETAK TXT KASBON -->
+  <div id="modal-cetak" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 px-4">
+    <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+      <h2 class="text-xl font-bold mb-2 border-b pb-2">📋 Copas Data Kasbon</h2>
+      <p class="text-sm text-gray-500 mb-4">Format: Nama, Tanggal, Nominal</p>
+      <textarea id="teks-copas" class="w-full h-48 border p-3 rounded text-sm mb-4 font-mono bg-gray-50 focus:outline-none" readonly></textarea>
+      <div class="flex justify-end gap-2">
+        <button onclick="tutupModalCetak()" class="px-4 py-2 bg-gray-300 rounded font-semibold hover:bg-gray-400">Tutup</button>
+        <button onclick="copyKeClipboard()" id="btn-copy" class="px-4 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-700 flex items-center gap-2">
+          <span>📋</span> Copy Teks
+        </button>
+      </div>
     </div>
   </div>
 
@@ -108,7 +117,6 @@
       <button onclick="bukaTab('buku-kas')" class="text-left p-3 mb-2 rounded hover:bg-blue-50 font-semibold flex items-center gap-2" id="btn-side-buku-kas"><span>📓</span> Buku Kas</button>
       <button onclick="bukaTab('rekap-kasbon')" class="text-left p-3 mb-2 rounded hover:bg-blue-50 font-semibold flex items-center gap-2" id="btn-side-rekap-kasbon"><span>📝</span> Rekap Kasbon</button>
       
-      <!-- Tombol Tambah di Sidebar -->
       <button onclick="bukaModalTambah()" class="mt-auto bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 w-full shadow-lg">➕ Tambah Data</button>
     </nav>
 
@@ -132,7 +140,6 @@
             <h3 class="text-3xl font-bold text-gray-800 mt-2" id="total-kasbon">Rp 0</h3>
           </div>
         </div>
-        <!-- Tombol Pintasan Mobile (Muncul di HP) -->
         <button onclick="bukaModalTambah()" class="md:hidden mt-6 bg-blue-600 text-white p-4 rounded-lg font-bold hover:bg-blue-700 w-full shadow-lg text-lg">➕ Buat Catatan Baru</button>
       </section>
 
@@ -164,10 +171,15 @@
 
       <!-- TAB 3: REKAP KASBON -->
       <section id="rekap-kasbon" class="tab-content">
-        <h2 class="text-2xl font-bold mb-6">📝 Daftar Bon Karyawan (Aktif)</h2>
-        <div class="bg-white rounded-lg shadow-md overflow-hidden">
-          <ul id="daftar-kasbon" class="divide-y divide-gray-200">
-          </ul>
+        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-3">
+          <h2 class="text-2xl font-bold w-full md:w-auto">📝 Daftar Bon Karyawan (Aktif)</h2>
+          <button onclick="bukaModalCetak()" class="w-full md:w-auto bg-gray-800 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-gray-900 text-sm flex justify-center items-center gap-2">
+            <span>📋</span> Cetak Text (Copas)
+          </button>
+        </div>
+        <!-- Wadah List Kasbon -->
+        <div id="daftar-kasbon" class="bg-white rounded-lg shadow-md p-4">
+          <!-- Data akan diisi oleh JavaScript -->
         </div>
       </section>
 
@@ -189,7 +201,7 @@
 
   <script>
     // ==========================================
-    // 1. PENGATURAN PIN (GANTI DENGAN PIN ANDA)
+    // 1. PENGATURAN PIN
     // ==========================================
     const PIN_RAHASIA = "123456"; 
     
@@ -205,7 +217,7 @@
     }
 
     // ==========================================
-    // 2. KONFIGURASI FIREBASE (Wajib Diisi Ulang)
+    // 2. KONFIGURASI FIREBASE
     // ==========================================
     const firebaseConfig = {
       apiKey:  "AIzaSyBhsfjjfpFw2o4uuPdWGmb1EQLuWjBVedY",
@@ -217,7 +229,7 @@
     const db = firebase.firestore();
 
     // ==========================================
-    // 3. LOGIKA FORM TAMBAH DATA
+    // 3. LOGIKA FORM TAMBAH DATA & MODAL CETAK
     // ==========================================
     function bukaModalTambah() {
       document.getElementById('modal-tambah').classList.remove('hidden');
@@ -225,10 +237,39 @@
       document.getElementById('form-transaksi').reset();
       ubahFormTambah(); 
     }
-
     function tutupModalTambah() {
       document.getElementById('modal-tambah').classList.add('hidden');
       document.getElementById('modal-tambah').classList.remove('flex');
+    }
+
+    // Variabel Global untuk menyimpan teks copas
+    let teksCetakGlobal = ""; 
+
+    function bukaModalCetak() {
+      if (teksCetakGlobal.trim() === "") {
+        alert("Tidak ada data kasbon yang aktif saat ini.");
+        return;
+      }
+      document.getElementById('teks-copas').value = teksCetakGlobal;
+      document.getElementById('modal-cetak').classList.remove('hidden');
+      document.getElementById('modal-cetak').classList.add('flex');
+      document.getElementById('btn-copy').innerHTML = '<span>📋</span> Copy Teks';
+    }
+    function tutupModalCetak() {
+      document.getElementById('modal-cetak').classList.add('hidden');
+      document.getElementById('modal-cetak').classList.remove('flex');
+    }
+    function copyKeClipboard() {
+      const textarea = document.getElementById('teks-copas');
+      textarea.select();
+      textarea.setSelectionRange(0, 99999); // Untuk mobile
+      document.execCommand("copy");
+      
+      const btn = document.getElementById('btn-copy');
+      btn.innerHTML = '<span>✅</span> Berhasil di-Copy!';
+      setTimeout(() => {
+        btn.innerHTML = '<span>📋</span> Copy Teks';
+      }, 2000);
     }
 
     function ubahFormTambah() {
@@ -262,7 +303,7 @@
     }
 
     async function simpanTransaksi(event) {
-      event.preventDefault(); // Mencegah web ter-refresh otomatis saat disubmit
+      event.preventDefault(); 
       const jenis = document.getElementById('form-jenis').value;
       const nominal = Number(document.getElementById('form-nominal').value);
       const btnSimpan = document.getElementById('btn-simpan');
@@ -270,7 +311,6 @@
       btnSimpan.innerText = "Menyimpan...";
       btnSimpan.disabled = true;
 
-      // Siapkan wadah data dengan timestamp server
       let dataTransaksi = {
         waktu: firebase.firestore.FieldValue.serverTimestamp(),
         nominal: nominal
@@ -283,7 +323,6 @@
       } else {
         dataTransaksi.jenis = jenis;
         dataTransaksi.rekening = document.getElementById('form-rekening').value;
-        
         const keterangan = document.getElementById('form-keterangan').value;
         if (jenis === 'kasbon') {
           dataTransaksi.nama_peminjam = keterangan.toLowerCase();
@@ -298,7 +337,6 @@
         tutupModalTambah();
       } catch (error) {
         alert("Gagal menyimpan data ke database. Cek koneksi Anda.");
-        console.error(error);
       } finally {
         btnSimpan.innerText = "Simpan Data";
         btnSimpan.disabled = false;
@@ -327,17 +365,24 @@
         semuaData = [];
         let saldoBrimo = 0, saldoSea = 0, totalKasbon = 0;
         let htmlTransaksi = '';
-        let rekapNama = {};
+        
+        // Struktur data baru untuk merekap rincian kasbon per orang
+        let kasbonPerOrang = {};
+        let arrCetakTxt = [];
 
         snapshot.forEach((doc) => {
           const id = doc.id;
           const trx = doc.data();
           const nom = trx.nominal || 0;
           
-          let tglStr = "Menyimpan..."; // Feedback instan saat tombol simpan baru saja ditekan
+          let tglStr = "Menyimpan...";
+          let tglCetak = "Belum Ada Tanggal";
           if (trx.waktu) {
             const d = trx.waktu.toDate();
+            // Format tabel
             tglStr = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+            // Format cetak kasbon
+            tglCetak = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')}/${d.getFullYear()}`;
           }
 
           if (trx.jenis === 'masuk') {
@@ -354,10 +399,17 @@
             if (trx.ke_rekening === 's') saldoSea += nom;
           }
 
+          // KUMPULKAN RINCIAN KASBON AKTIF UNTUK MENU REKAP KASBON
           if (trx.jenis === 'kasbon' && trx.status !== 'lunas') {
             const n = trx.nama_peminjam || 'Tanpa Nama';
-            if(!rekapNama[n]) rekapNama[n] = 0;
-            rekapNama[n] += nom;
+            if(!kasbonPerOrang[n]) kasbonPerOrang[n] = { total: 0, items: [] };
+            
+            kasbonPerOrang[n].total += nom;
+            kasbonPerOrang[n].items.push({ id: id, tanggal: tglCetak, nominal: nom });
+            
+            // Format teks untuk di-copy (Nama huruf awalnya besar)
+            const namaKapital = n.charAt(0).toUpperCase() + n.slice(1);
+            arrCetakTxt.push(`${namaKapital}, ${tglCetak}, ${nom}`);
           }
 
           let kategori = trx.jenis.toUpperCase();
@@ -382,26 +434,54 @@
           semuaData.push({ Waktu: tglStr, Kategori: kategori, Bank: bank, Keterangan: ket, Nominal: nom, Status: trx.status || '-' });
         });
 
+        // Simpan gabungan teks untuk fitur Copas
+        teksCetakGlobal = arrCetakTxt.join("\n");
+
         document.getElementById('saldo-brimo').innerText = formatRp(saldoBrimo);
         document.getElementById('saldo-sea').innerText = formatRp(saldoSea);
         document.getElementById('total-kasbon').innerText = formatRp(totalKasbon);
         document.getElementById('tabel-transaksi').innerHTML = htmlTransaksi || `<tr><td colspan="5" class="text-center py-4">Belum ada transaksi</td></tr>`;
 
+        // MERENDER TAMPILAN REKAP KASBON (Grup per nama + rincian Edit/Hapus)
         let htmlKasbon = '';
-        for (const [nama, nominal] of Object.entries(rekapNama)) {
-          htmlKasbon += `
-            <li class="p-4 flex justify-between items-center hover:bg-gray-50">
-              <span class="font-bold text-lg text-gray-800 capitalize">👤 ${nama}</span>
-              <span class="font-semibold text-red-600 bg-red-100 px-3 py-1 rounded-full">${formatRp(nominal)}</span>
-            </li>
-          `;
+        if (Object.keys(kasbonPerOrang).length === 0) {
+          htmlKasbon = `<div class="text-center py-8 text-gray-500 font-semibold">Semua kasbon sudah lunas / kosong.</div>`;
+        } else {
+          for (const [nama, data] of Object.entries(kasbonPerOrang)) {
+            htmlKasbon += `
+              <div class="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+                <div class="flex justify-between items-center bg-gray-100 p-3 px-4 border-b">
+                  <span class="font-bold text-lg text-gray-800 capitalize">👤 ${nama}</span>
+                  <span class="font-bold text-red-600">Total: ${formatRp(data.total)}</span>
+                </div>
+                <ul class="divide-y divide-gray-200 bg-white">
+            `;
+            
+            // Render rincian per transaksi
+            data.items.forEach(item => {
+              htmlKasbon += `
+                  <li class="flex justify-between items-center p-3 px-4 hover:bg-gray-50">
+                    <span class="text-sm text-gray-500 font-semibold">📅 ${item.tanggal}</span>
+                    <div class="flex items-center gap-4">
+                      <span class="font-semibold text-gray-800">${formatRp(item.nominal)}</span>
+                      <div class="border-l pl-3">
+                        <button onclick="editData('${item.id}', ${item.nominal})" class="text-blue-500 hover:text-blue-700 text-lg mr-2" title="Edit Nominal">✏️</button>
+                        <button onclick="hapusData('${item.id}')" class="text-red-500 hover:text-red-700 text-lg" title="Hapus Kasbon Ini">🗑️</button>
+                      </div>
+                    </div>
+                  </li>
+              `;
+            });
+            
+            htmlKasbon += `</ul></div>`;
+          }
         }
-        document.getElementById('daftar-kasbon').innerHTML = htmlKasbon || `<li class="p-4 text-center text-gray-500">Semua kasbon sudah lunas.</li>`;
+        document.getElementById('daftar-kasbon').innerHTML = htmlKasbon;
       });
     }
 
     async function hapusData(id) {
-      if (confirm("Yakin ingin menghapus baris ini?")) {
+      if (confirm("Yakin ingin menghapus baris transaksi ini?")) {
         await db.collection("transaksi").doc(id).delete();
       }
     }
