@@ -4,9 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Buku KAS</title>
+  
+  <!-- CSS Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Pustaka Export Excel -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   
+  <!-- Pustaka Export PDF (jsPDF & AutoTable) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  
+  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
@@ -39,18 +48,34 @@
     </div>
   </div>
 
+  <!-- MODAL TUTUP BUKU (PDF & RESET BULAN) -->
+  <div id="modal-tutup" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 px-4">
+    <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+      <h2 class="text-xl font-bold mb-2 border-b pb-2 text-red-700">📚 Tutup Buku Akhir Bulan</h2>
+      <p class="text-sm text-gray-600 mb-4">Proses ini akan mencetak laporan 1 bulan ke <b>PDF</b>, lalu menghapus riwayat bulan tersebut agar aplikasi tidak berat. Saldo ATM akan dipindahkan otomatis, dan <b>Kasbon aktif tidak akan dihapus.</b></p>
+      
+      <div class="mb-4">
+        <label class="block text-sm font-semibold mb-1">Pilih Bulan & Tahun</label>
+        <input type="month" id="input-bulan-tutup" class="w-full border p-3 rounded font-bold text-gray-700">
+      </div>
+
+      <div class="flex justify-end gap-2 mt-6">
+        <button onclick="tutupModalTutupBuku()" class="px-4 py-2 bg-gray-300 rounded font-semibold hover:bg-gray-400">Batal</button>
+        <button onclick="prosesTutupBuku()" id="btn-proses-tutup" class="px-4 py-2 bg-red-700 text-white rounded font-bold hover:bg-red-800">Proses & Download PDF</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL TAMBAH TRANSAKSI -->
   <div id="modal-tambah" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 px-4">
     <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
       <h2 class="text-xl font-bold mb-4 border-b pb-2">➕ Tambah Catatan Baru</h2>
       <form id="form-transaksi" onsubmit="simpanTransaksi(event)">
-        
         <div class="mb-3">
           <label class="block text-sm font-semibold mb-1">Tanggal & Waktu (Opsional)</label>
           <input type="datetime-local" id="form-waktu" class="w-full border p-2 rounded text-sm text-gray-700">
-          <p class="text-xs text-gray-500 mt-1">Biarkan kosong untuk menggunakan waktu saat ini.</p>
+          <p class="text-xs text-gray-500 mt-1">Biarkan kosong untuk waktu saat ini.</p>
         </div>
-
         <div class="mb-3">
           <label class="block text-sm font-semibold mb-1">Jenis Operasional</label>
           <select id="form-jenis" onchange="ubahFormTambah()" class="w-full border p-2 rounded" required>
@@ -89,7 +114,7 @@
         </div>
         <div class="mb-4">
           <label class="block text-sm font-semibold mb-1">Nominal (Rp)</label>
-          <input type="number" id="form-nominal" class="w-full border p-2 rounded" placeholder="Tanpa titik (Cth: 500000)" required>
+          <input type="number" id="form-nominal" class="w-full border p-2 rounded" required>
         </div>
         <div class="flex justify-end gap-2 mt-6">
           <button type="button" onclick="tutupModalTambah()" class="px-4 py-2 bg-gray-300 rounded font-semibold hover:bg-gray-400">Batal</button>
@@ -105,17 +130,14 @@
       <h2 class="text-xl font-bold mb-4 border-b pb-2">✏️ Edit Catatan</h2>
       <form id="form-edit" onsubmit="simpanEdit(event)">
         <input type="hidden" id="edit-id">
-        
         <div class="mb-3">
           <label class="block text-sm font-semibold mb-1">Ubah Tanggal & Waktu</label>
           <input type="datetime-local" id="edit-waktu" class="w-full border p-2 rounded text-sm text-gray-700" required>
         </div>
-
         <div class="mb-4">
           <label class="block text-sm font-semibold mb-1">Ubah Nominal (Rp)</label>
           <input type="number" id="edit-nominal" class="w-full border p-2 rounded" required>
         </div>
-
         <div class="flex justify-end gap-2 mt-6">
           <button type="button" onclick="tutupModalEdit()" class="px-4 py-2 bg-gray-300 rounded font-semibold hover:bg-gray-400">Batal</button>
           <button type="submit" id="btn-simpan-edit" class="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700">Simpan Perubahan</button>
@@ -128,7 +150,6 @@
   <div id="modal-cetak" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 px-4">
     <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
       <h2 class="text-xl font-bold mb-2 border-b pb-2">📋 Copas Data Kasbon</h2>
-      <p class="text-sm text-gray-500 mb-4">Format: Nama, Tanggal, Nominal</p>
       <textarea id="teks-copas" class="w-full h-48 border p-3 rounded text-sm mb-4 font-mono bg-gray-50 focus:outline-none" readonly></textarea>
       <div class="flex justify-end gap-2">
         <button onclick="tutupModalCetak()" class="px-4 py-2 bg-gray-300 rounded font-semibold hover:bg-gray-400">Tutup</button>
@@ -179,9 +200,10 @@
       <section id="buku-kas" class="tab-content">
         <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-3">
           <h2 class="text-2xl font-bold w-full md:w-auto">📓 Riwayat Transaksi</h2>
-          <div class="flex gap-2 w-full md:w-auto">
-            <button onclick="bukaModalTambah()" class="flex-1 md:flex-none bg-blue-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-700 text-sm">➕ Tambah</button>
-            <button onclick="exportExcel()" class="flex-1 md:flex-none bg-green-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-green-700 text-sm">⬇️ Export Excel</button>
+          <div class="flex flex-wrap gap-2 w-full md:w-auto justify-end">
+            <button onclick="bukaModalTutupBuku()" class="bg-red-700 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-red-800 text-sm">📚 Tutup Buku</button>
+            <button onclick="exportExcel()" class="bg-green-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-green-700 text-sm">⬇️ Excel</button>
+            <button onclick="bukaModalTambah()" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-700 text-sm">➕ Tambah</button>
           </div>
         </div>
         <div class="bg-white rounded-lg shadow-md overflow-x-auto">
@@ -209,15 +231,12 @@
             <span>📋</span> Cetak Text (Copas)
           </button>
         </div>
-        
         <div class="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-3 mb-4 rounded text-sm">
           <b>💡 Info Tombol:</b> <br>
           Gunakan <b>✅ Lunas</b> untuk potong gaji (saldo ATM tetap aman). <br>
           Gunakan <b>🗑️ Hapus</b> HANYA jika Anda salah ketik (saldo ATM akan kembali).
         </div>
-
         <div id="daftar-kasbon" class="bg-white rounded-lg shadow-md p-4">
-          <!-- Data akan diisi oleh JavaScript -->
         </div>
       </section>
 
@@ -239,13 +258,12 @@
 
   <script>
     // ==========================================
-    // 1. PENGATURAN PIN
+    // 1. PENGATURAN PIN & FIREBASE
     // ==========================================
     const PIN_RAHASIA = "123456"; 
     
     function cekPin() {
-      const input = document.getElementById('pin-input').value;
-      if (input === PIN_RAHASIA) {
+      if (document.getElementById('pin-input').value === PIN_RAHASIA) {
         document.getElementById('pin-screen').style.display = 'none';
         document.getElementById('app-container').classList.remove('hidden');
         inisialisasiData(); 
@@ -254,9 +272,6 @@
       }
     }
 
-    // ==========================================
-    // 2. KONFIGURASI FIREBASE (Asli milik Anda)
-    // ==========================================
     const firebaseConfig = {
       apiKey:  "AIzaSyBhsfjjfpFw2o4uuPdWGmb1EQLuWjBVedY",
       authDomain: "buku-kas-17.firebaseapp.com",
@@ -266,10 +281,166 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
+    const formatRp = (angka) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka);
+    function toDatetimeLocal(d) {
+      const pad = (n) => n.toString().padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
     // ==========================================
-    // 3. LOGIKA FORM TAMBAH & EDIT DATA
+    // 2. TUTUP BUKU & CETAK PDF
     // ==========================================
-    // A. Fungsi Tambah
+    function bukaModalTutupBuku() {
+      document.getElementById('modal-tutup').classList.remove('hidden');
+      document.getElementById('modal-tutup').classList.add('flex');
+    }
+    function tutupModalTutupBuku() {
+      document.getElementById('modal-tutup').classList.add('hidden');
+      document.getElementById('modal-tutup').classList.remove('flex');
+    }
+
+    async function prosesTutupBuku() {
+      const inputBulan = document.getElementById('input-bulan-tutup').value;
+      if (!inputBulan) return alert("Silakan pilih bulan yang ingin ditutup!");
+
+      const btn = document.getElementById('btn-proses-tutup');
+      btn.innerText = "Memproses...";
+      btn.disabled = true;
+
+      try {
+        const [yearStr, monthStr] = inputBulan.split('-');
+        const year = parseInt(yearStr);
+        const month = parseInt(monthStr);
+
+        // Cari Hari pertama dan Hari terakhir di bulan tersebut
+        const startOfMonth = new Date(year, month - 1, 1);
+        const endOfMonth = new Date(year, month, 0, 23, 59, 59);
+
+        // Tarik data khusus bulan tersebut
+        const snapshot = await db.collection("transaksi")
+          .where("waktu", ">=", startOfMonth)
+          .where("waktu", "<=", endOfMonth)
+          .orderBy("waktu", "asc")
+          .get();
+
+        if (snapshot.empty) {
+          alert("Tidak ada transaksi yang tercatat pada bulan tersebut.");
+          btn.innerText = "Proses & Download PDF";
+          btn.disabled = false;
+          return;
+        }
+
+        let pdfData = [];
+        let hapusDocs = [];
+        let netBrimo = 0;
+        let netSea = 0;
+
+        snapshot.forEach(doc => {
+          const trx = doc.data();
+          const nom = trx.nominal || 0;
+          
+          // 1. Susun Data untuk PDF
+          const d = trx.waktu.toDate();
+          const tglStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+          let ket = trx.keterangan || trx.nama_peminjam || `${trx.dari_rekening} -> ${trx.ke_rekening}`;
+          let statusKasbon = (trx.jenis === 'kasbon' && trx.status === 'lunas') ? ' (Lunas)' : (trx.jenis === 'kasbon' ? ' (Aktif)' : '');
+          pdfData.push([tglStr, trx.jenis.toUpperCase(), trx.rekening ? trx.rekening.toUpperCase() : '-', ket + statusKasbon, formatRp(nom)]);
+
+          // 2. Pilah Data yang akan dihapus vs Kasbon Aktif
+          let akanDihapus = true;
+          if (trx.jenis === 'kasbon' && trx.status !== 'lunas') {
+            akanDihapus = false; // Kasbon aktif diselamatkan
+          }
+
+          if (akanDihapus) {
+            hapusDocs.push(doc.ref);
+            // Hitung efek saldo dari transaksi yang akan dihapus ini
+            if (trx.jenis === 'masuk') {
+              if (trx.rekening === 'b') netBrimo += nom;
+              if (trx.rekening === 's') netSea += nom;
+            } else if (trx.jenis === 'keluar' || trx.jenis === 'kasbon') {
+              if (trx.rekening === 'b') netBrimo -= nom;
+              if (trx.rekening === 's') netSea -= nom;
+            } else if (trx.jenis === 'mutasi') {
+              if (trx.dari_rekening === 'b') netBrimo -= nom;
+              if (trx.dari_rekening === 's') netSea -= nom;
+              if (trx.ke_rekening === 'b') netBrimo += nom;
+              if (trx.ke_rekening === 's') netSea += nom;
+            }
+          }
+        });
+
+        // 3. Buat dan Unduh Laporan PDF
+        const namaBulanLengkap = startOfMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+        const { jsPDF } = window.jspdf;
+        const docPdf = new jsPDF();
+        
+        docPdf.setFontSize(16);
+        docPdf.text(`Laporan Buku Kasir - ${namaBulanLengkap}`, 14, 20);
+        
+        docPdf.autoTable({
+          startY: 25,
+          head: [['Waktu', 'Kategori', 'Rekening', 'Keterangan', 'Nominal']],
+          body: pdfData,
+          theme: 'grid',
+          headStyles: { fillColor: [41, 128, 185] }
+        });
+        
+        docPdf.save(`Laporan_Kas_${namaBulanLengkap.replace(' ', '_')}.pdf`);
+
+        // 4. Eksekusi Penghapusan dan Injeksi Saldo Pindahan
+        let batchArray = [];
+        let batch = db.batch();
+        let count = 0;
+
+        hapusDocs.forEach(ref => {
+          batch.delete(ref);
+          count++;
+          if (count === 490) { // Firebase limit is 500 per batch
+            batchArray.push(batch.commit());
+            batch = db.batch();
+            count = 0;
+          }
+        });
+
+        // Waktu Saldo Pindahan diset di detik terakhir bulan tersebut
+        const waktuPindahan = firebase.firestore.Timestamp.fromDate(endOfMonth);
+
+        if (netBrimo !== 0) {
+          const tipe = netBrimo > 0 ? 'masuk' : 'keluar';
+          batch.set(db.collection("transaksi").doc(), {
+            jenis: tipe, rekening: 'b', keterangan: `Saldo Pindahan - ${namaBulanLengkap}`,
+            nominal: Math.abs(netBrimo), waktu: waktuPindahan
+          });
+          count++;
+        }
+        if (netSea !== 0) {
+          const tipe = netSea > 0 ? 'masuk' : 'keluar';
+          batch.set(db.collection("transaksi").doc(), {
+            jenis: tipe, rekening: 's', keterangan: `Saldo Pindahan - ${namaBulanLengkap}`,
+            nominal: Math.abs(netSea), waktu: waktuPindahan
+          });
+          count++;
+        }
+
+        if (count > 0) batchArray.push(batch.commit());
+        await Promise.all(batchArray);
+
+        alert(`Tutup Buku ${namaBulanLengkap} Berhasil!\nLaporan PDF telah diunduh, riwayat bulan tersebut telah dibersihkan, dan Saldo ATM Anda sudah dipindahkan dengan aman.`);
+        tutupModalTutupBuku();
+
+      } catch (error) {
+        console.error(error);
+        alert("Terjadi kesalahan saat memproses tutup buku.");
+      } finally {
+        btn.innerText = "Proses & Download PDF";
+        btn.disabled = false;
+      }
+    }
+
+    // ==========================================
+    // 3. FUNGSI TAMBAH, EDIT, CETAK COPAS
+    // ==========================================
     function bukaModalTambah() {
       document.getElementById('modal-tambah').classList.remove('hidden');
       document.getElementById('modal-tambah').classList.add('flex');
@@ -289,27 +460,13 @@
       const inputKet = document.getElementById('form-keterangan');
 
       if (jenis === 'mutasi') {
-        divRekening.classList.add('hidden');
-        divMutasi.classList.remove('hidden');
-        divKet.classList.add('hidden');
-        inputKet.required = false;
+        divRekening.classList.add('hidden'); divMutasi.classList.remove('hidden'); divKet.classList.add('hidden'); inputKet.required = false;
       } else if (jenis === 'kasbon') {
-        divRekening.classList.remove('hidden');
-        divMutasi.classList.add('hidden');
-        divKet.classList.remove('hidden');
-        labelKet.innerText = 'Nama Karyawan (Peminjam)';
-        inputKet.placeholder = 'Cth: alpin';
-        inputKet.required = true;
+        divRekening.classList.remove('hidden'); divMutasi.classList.add('hidden'); divKet.classList.remove('hidden'); labelKet.innerText = 'Nama Karyawan (Peminjam)'; inputKet.placeholder = 'Cth: alpin'; inputKet.required = true;
       } else {
-        divRekening.classList.remove('hidden');
-        divMutasi.classList.add('hidden');
-        divKet.classList.remove('hidden');
-        labelKet.innerText = 'Keterangan';
-        inputKet.placeholder = 'Cth: Beli spidol';
-        inputKet.required = true;
+        divRekening.classList.remove('hidden'); divMutasi.classList.add('hidden'); divKet.classList.remove('hidden'); labelKet.innerText = 'Keterangan'; inputKet.placeholder = 'Cth: Beli spidol'; inputKet.required = true;
       }
     }
-
     async function simpanTransaksi(event) {
       event.preventDefault(); 
       const jenis = document.getElementById('form-jenis').value;
@@ -320,182 +477,111 @@
       btnSimpan.innerText = "Menyimpan...";
       btnSimpan.disabled = true;
 
-      // Logika Penentuan Waktu (Jika diisi manual atau dibiarkan kosong)
       let waktuFinal = firebase.firestore.FieldValue.serverTimestamp();
-      if (inputWaktu) {
-        waktuFinal = new Date(inputWaktu); 
-      }
+      if (inputWaktu) waktuFinal = new Date(inputWaktu); 
 
-      let dataTransaksi = {
-        waktu: waktuFinal,
-        nominal: nominal
-      };
+      let dataTransaksi = { waktu: waktuFinal, nominal: nominal };
 
       if (jenis === 'mutasi') {
-        dataTransaksi.jenis = 'mutasi';
-        dataTransaksi.dari_rekening = document.getElementById('form-dari').value;
-        dataTransaksi.ke_rekening = document.getElementById('form-ke').value;
+        dataTransaksi.jenis = 'mutasi'; dataTransaksi.dari_rekening = document.getElementById('form-dari').value; dataTransaksi.ke_rekening = document.getElementById('form-ke').value;
       } else {
-        dataTransaksi.jenis = jenis;
-        dataTransaksi.rekening = document.getElementById('form-rekening').value;
+        dataTransaksi.jenis = jenis; dataTransaksi.rekening = document.getElementById('form-rekening').value;
         const keterangan = document.getElementById('form-keterangan').value;
-        if (jenis === 'kasbon') {
-          dataTransaksi.nama_peminjam = keterangan.toLowerCase();
-          dataTransaksi.status = 'aktif';
-        } else {
-          dataTransaksi.keterangan = keterangan;
-        }
+        if (jenis === 'kasbon') { dataTransaksi.nama_peminjam = keterangan.toLowerCase(); dataTransaksi.status = 'aktif'; } 
+        else { dataTransaksi.keterangan = keterangan; }
       }
 
-      try {
-        await db.collection("transaksi").add(dataTransaksi);
-        tutupModalTambah();
-      } catch (error) {
-        alert("Gagal menyimpan data ke database. Cek koneksi Anda.");
-      } finally {
-        btnSimpan.innerText = "Simpan Data";
-        btnSimpan.disabled = false;
-      }
+      try { await db.collection("transaksi").add(dataTransaksi); tutupModalTambah(); } 
+      catch (error) { alert("Gagal menyimpan."); } 
+      finally { btnSimpan.innerText = "Simpan Data"; btnSimpan.disabled = false; }
     }
 
-    // B. Fungsi Edit Baru
     function bukaModalEdit(id, nominal, waktuISO) {
       document.getElementById('edit-id').value = id;
       document.getElementById('edit-nominal').value = nominal;
       document.getElementById('edit-waktu').value = waktuISO;
-      
       document.getElementById('modal-edit').classList.remove('hidden');
       document.getElementById('modal-edit').classList.add('flex');
     }
-    
     function tutupModalEdit() {
       document.getElementById('modal-edit').classList.add('hidden');
       document.getElementById('modal-edit').classList.remove('flex');
     }
-
     async function simpanEdit(event) {
       event.preventDefault();
-      const btnSimpan = document.getElementById('btn-simpan-edit');
-      btnSimpan.innerText = "Menyimpan...";
-      btnSimpan.disabled = true;
-
+      const btn = document.getElementById('btn-simpan-edit');
+      btn.innerText = "Menyimpan..."; btn.disabled = true;
       const id = document.getElementById('edit-id').value;
       const nomBaru = Number(document.getElementById('edit-nominal').value);
       const waktuBaru = new Date(document.getElementById('edit-waktu').value);
 
-      try {
-        await db.collection("transaksi").doc(id).update({
-          nominal: nomBaru,
-          waktu: waktuBaru
-        });
-        tutupModalEdit();
-      } catch (error) {
-        alert("Gagal mengedit data.");
-      } finally {
-        btnSimpan.innerText = "Simpan Perubahan";
-        btnSimpan.disabled = false;
-      }
+      try { await db.collection("transaksi").doc(id).update({ nominal: nomBaru, waktu: waktuBaru }); tutupModalEdit(); } 
+      catch (error) { alert("Gagal mengedit."); } 
+      finally { btn.innerText = "Simpan Perubahan"; btn.disabled = false; }
     }
 
-    // C. Fungsi Cetak Copas
     let teksCetakGlobal = ""; 
     function bukaModalCetak() {
-      if (teksCetakGlobal.trim() === "") {
-        alert("Tidak ada data kasbon yang aktif saat ini.");
-        return;
-      }
+      if (teksCetakGlobal.trim() === "") return alert("Tidak ada data kasbon aktif.");
       document.getElementById('teks-copas').value = teksCetakGlobal;
       document.getElementById('modal-cetak').classList.remove('hidden');
       document.getElementById('modal-cetak').classList.add('flex');
       document.getElementById('btn-copy').innerHTML = '<span>📋</span> Copy Teks';
     }
-    function tutupModalCetak() {
-      document.getElementById('modal-cetak').classList.add('hidden');
-      document.getElementById('modal-cetak').classList.remove('flex');
-    }
+    function tutupModalCetak() { document.getElementById('modal-cetak').classList.add('hidden'); document.getElementById('modal-cetak').classList.remove('flex'); }
     function copyKeClipboard() {
-      const textarea = document.getElementById('teks-copas');
-      textarea.select();
-      textarea.setSelectionRange(0, 99999); 
+      const textarea = document.getElementById('teks-copas'); textarea.select(); textarea.setSelectionRange(0, 99999); 
       document.execCommand("copy");
-      
-      const btn = document.getElementById('btn-copy');
-      btn.innerHTML = '<span>✅</span> Berhasil di-Copy!';
+      const btn = document.getElementById('btn-copy'); btn.innerHTML = '<span>✅</span> Berhasil di-Copy!';
       setTimeout(() => { btn.innerHTML = '<span>📋</span> Copy Teks'; }, 2000);
     }
 
     // ==========================================
-    // 4. LOGIKA APLIKASI UTAMA (REAL-TIME)
+    // 4. LOGIKA UTAMA (REAL-TIME DASHBOARD)
     // ==========================================
     function bukaTab(tabName) {
       document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
       document.getElementById(tabName).classList.add('active');
-      
       const botBtns = ['dashboard', 'buku-kas', 'rekap-kasbon'];
-      botBtns.forEach(b => {
-        document.getElementById(`btn-bot-${b}`).classList.replace('text-blue-600', 'text-gray-500');
-      });
+      botBtns.forEach(b => { document.getElementById(`btn-bot-${b}`).classList.replace('text-blue-600', 'text-gray-500'); });
       document.getElementById(`btn-bot-${tabName}`).classList.replace('text-gray-500', 'text-blue-600');
     }
 
-    const formatRp = (angka) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka);
-    
-    // Alat pengubah format tanggal (Date to YYYY-MM-DDThh:mm) untuk Modal Edit
-    function toDatetimeLocal(d) {
-      const pad = (n) => n.toString().padStart(2, '0');
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    }
-
     let semuaData = []; 
-
     function inisialisasiData() {
       db.collection("transaksi").orderBy("waktu", "desc").onSnapshot((snapshot) => {
         semuaData = [];
         let saldoBrimo = 0, saldoSea = 0, totalKasbon = 0;
         let htmlTransaksi = '';
-        
         let kasbonPerOrang = {};
         let arrCetakTxt = [];
 
         snapshot.forEach((doc) => {
-          const id = doc.id;
-          const trx = doc.data();
-          const nom = trx.nominal || 0;
-          
-          let tglStr = "Menyimpan...";
-          let tglCetak = "Belum Ada Tanggal";
-          let isoWaktu = ""; // Waktu baku untuk form Edit
+          const id = doc.id; const trx = doc.data(); const nom = trx.nominal || 0;
+          let tglStr = "Menyimpan..."; let tglCetak = "Belum Ada Tanggal"; let isoWaktu = toDatetimeLocal(new Date());
 
           if (trx.waktu) {
             const d = trx.waktu.toDate();
             tglStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
             tglCetak = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')}/${d.getFullYear()}`;
             isoWaktu = toDatetimeLocal(d);
-          } else {
-            isoWaktu = toDatetimeLocal(new Date()); // Fallback jika belum tersimpan sempurna
           }
 
           if (trx.jenis === 'masuk') {
-            if (trx.rekening === 'b') saldoBrimo += nom;
-            if (trx.rekening === 's') saldoSea += nom;
+            if (trx.rekening === 'b') saldoBrimo += nom; if (trx.rekening === 's') saldoSea += nom;
           } else if (trx.jenis === 'keluar' || trx.jenis === 'kasbon') {
-            if (trx.rekening === 'b') saldoBrimo -= nom;
-            if (trx.rekening === 's') saldoSea -= nom;
+            if (trx.rekening === 'b') saldoBrimo -= nom; if (trx.rekening === 's') saldoSea -= nom;
             if (trx.jenis === 'kasbon' && trx.status !== 'lunas') totalKasbon += nom;
           } else if (trx.jenis === 'mutasi') {
-            if (trx.dari_rekening === 'b') saldoBrimo -= nom;
-            if (trx.dari_rekening === 's') saldoSea -= nom;
-            if (trx.ke_rekening === 'b') saldoBrimo += nom;
-            if (trx.ke_rekening === 's') saldoSea += nom;
+            if (trx.dari_rekening === 'b') saldoBrimo -= nom; if (trx.dari_rekening === 's') saldoSea -= nom;
+            if (trx.ke_rekening === 'b') saldoBrimo += nom; if (trx.ke_rekening === 's') saldoSea += nom;
           }
 
           if (trx.jenis === 'kasbon' && trx.status !== 'lunas') {
             const n = trx.nama_peminjam || 'Tanpa Nama';
             if(!kasbonPerOrang[n]) kasbonPerOrang[n] = { total: 0, items: [] };
-            
             kasbonPerOrang[n].total += nom;
             kasbonPerOrang[n].items.push({ id: id, tanggal: tglCetak, nominal: nom, isoWaktu: isoWaktu });
-            
             const namaKapital = n.charAt(0).toUpperCase() + n.slice(1);
             arrCetakTxt.push(`${namaKapital}, ${tglCetak}, ${nom}`);
           }
@@ -513,27 +599,23 @@
               <td class="py-3 px-4 capitalize">${ket}${statusKasbon}</td>
               <td class="py-3 px-4 font-semibold">${formatRp(nom)}</td>
               <td class="py-3 px-4 text-center">
-                <button onclick="bukaModalEdit('${id}', ${nom}, '${isoWaktu}')" class="text-blue-500 hover:text-blue-700 mr-3 text-lg" title="Edit Data">✏️</button>
-                <button onclick="hapusData('${id}')" class="text-red-500 hover:text-red-700 text-lg" title="Hapus Data">🗑️</button>
+                <button onclick="bukaModalEdit('${id}', ${nom}, '${isoWaktu}')" class="text-blue-500 hover:text-blue-700 mr-3 text-lg">✏️</button>
+                <button onclick="hapusData('${id}')" class="text-red-500 hover:text-red-700 text-lg">🗑️</button>
               </td>
             </tr>
           `;
-
           semuaData.push({ Waktu: tglStr, Kategori: kategori, Bank: bank, Keterangan: ket, Nominal: nom, Status: trx.status || '-' });
         });
 
         teksCetakGlobal = arrCetakTxt.join("\n");
-
         document.getElementById('saldo-brimo').innerText = formatRp(saldoBrimo);
         document.getElementById('saldo-sea').innerText = formatRp(saldoSea);
         document.getElementById('total-kasbon').innerText = formatRp(totalKasbon);
         document.getElementById('tabel-transaksi').innerHTML = htmlTransaksi || `<tr><td colspan="5" class="text-center py-4">Belum ada transaksi</td></tr>`;
 
-        // RENDER KASBON
         let htmlKasbon = '';
-        if (Object.keys(kasbonPerOrang).length === 0) {
-          htmlKasbon = `<div class="text-center py-8 text-gray-500 font-semibold">Semua kasbon sudah lunas / kosong.</div>`;
-        } else {
+        if (Object.keys(kasbonPerOrang).length === 0) { htmlKasbon = `<div class="text-center py-8 text-gray-500 font-semibold">Semua kasbon sudah lunas / kosong.</div>`; } 
+        else {
           for (const [nama, data] of Object.entries(kasbonPerOrang)) {
             htmlKasbon += `
               <div class="mb-4 border border-gray-200 rounded-lg overflow-hidden shadow-sm">
@@ -546,7 +628,6 @@
                 </div>
                 <ul class="divide-y divide-gray-200 bg-white">
             `;
-            
             data.items.forEach(item => {
               htmlKasbon += `
                   <li class="flex justify-between items-center p-3 px-4 hover:bg-gray-50">
@@ -554,15 +635,14 @@
                     <div class="flex flex-1 justify-end items-center gap-2 md:gap-4">
                       <span class="font-semibold text-gray-800">${formatRp(item.nominal)}</span>
                       <div class="border-l pl-2 md:pl-3 flex gap-1 md:gap-2">
-                        <button onclick="lunasKasbon('${item.id}')" class="text-green-500 hover:text-green-700 text-lg md:text-xl" title="Lunas">✅</button>
-                        <button onclick="bukaModalEdit('${item.id}', ${item.nominal}, '${item.isoWaktu}')" class="text-blue-500 hover:text-blue-700 text-lg md:text-xl" title="Edit">✏️</button>
-                        <button onclick="hapusData('${item.id}')" class="text-red-500 hover:text-red-700 text-lg md:text-xl" title="Hapus">🗑️</button>
+                        <button onclick="lunasKasbon('${item.id}')" class="text-green-500 hover:text-green-700 text-lg md:text-xl">✅</button>
+                        <button onclick="bukaModalEdit('${item.id}', ${item.nominal}, '${item.isoWaktu}')" class="text-blue-500 hover:text-blue-700 text-lg md:text-xl">✏️</button>
+                        <button onclick="hapusData('${item.id}')" class="text-red-500 hover:text-red-700 text-lg md:text-xl">🗑️</button>
                       </div>
                     </div>
                   </li>
               `;
             });
-            
             htmlKasbon += `</ul></div>`;
           }
         }
@@ -571,31 +651,23 @@
     }
 
     async function lunasKasbon(id) {
-      if (confirm("✅ Tandai kasbon ini sebagai LUNAS (Potong Gaji)?\n\nSaldo ATM TIDAK akan bertambah.")) {
-        await db.collection("transaksi").doc(id).update({ status: 'lunas' });
-      }
+      if (confirm("✅ Tandai LUNAS (Potong Gaji)?\n\nSaldo ATM TIDAK akan bertambah.")) await db.collection("transaksi").doc(id).update({ status: 'lunas' });
     }
     async function lunasSemuaKasbon(namaTarget) {
-      if (confirm(`✅ Tandai SEMUA kasbon ${namaTarget.toUpperCase()} sebagai LUNAS?\n\nSaldo ATM TIDAK akan bertambah.`)) {
+      if (confirm(`✅ Tandai SEMUA kasbon ${namaTarget.toUpperCase()} LUNAS?\n\nSaldo ATM TIDAK akan bertambah.`)) {
         const snapshot = await db.collection('transaksi').where('jenis', '==', 'kasbon').where('nama_peminjam', '==', namaTarget.toLowerCase()).get();
-        const batch = db.batch();
-        let adaUpdate = false;
-        snapshot.docs.forEach(doc => {
-          if (doc.data().status !== 'lunas') { batch.update(doc.ref, { status: 'lunas' }); adaUpdate = true; }
-        });
+        const batch = db.batch(); let adaUpdate = false;
+        snapshot.docs.forEach(doc => { if (doc.data().status !== 'lunas') { batch.update(doc.ref, { status: 'lunas' }); adaUpdate = true; } });
         if (adaUpdate) await batch.commit();
       }
     }
     async function hapusData(id) {
-      if (confirm("⚠️ HAPUS PERMANEN?\n\nGunakan ini hanya jika Anda SALAH KETIK. Transaksi akan dihapus dan uang akan kembali ke saldo ATM.")) {
-        await db.collection("transaksi").doc(id).delete();
-      }
+      if (confirm("⚠️ HAPUS PERMANEN?\n\nGunakan hanya jika SALAH KETIK. Uang akan kembali ke saldo.")) await db.collection("transaksi").doc(id).delete();
     }
     function exportExcel() {
-      if(semuaData.length === 0) return alert("Belum ada data untuk diexport!");
+      if(semuaData.length === 0) return alert("Belum ada data.");
       const ws = XLSX.utils.json_to_sheet(semuaData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Riwayat Transaksi");
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Riwayat");
       XLSX.writeFile(wb, "Laporan_Kasir_Bos.xlsx");
     }
   </script>
