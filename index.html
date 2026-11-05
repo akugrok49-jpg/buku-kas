@@ -42,11 +42,29 @@
     </div>
   </div>
 
-  <!-- MODAL TUTUP BUKU -->
+  <!-- MODAL CETAK PDF (TANPA TUTUP BUKU) -->
+  <div id="modal-cetak-pdf" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 px-4">
+    <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+      <h2 class="text-xl font-bold mb-2 border-b pb-2 text-blue-700">📄 Cetak Laporan PDF</h2>
+      <p class="text-sm text-gray-600 mb-4">Pilih bulan untuk mengunduh laporan PDF. <b>Data transaksi & saldo TIDAK akan diubah atau dihapus.</b></p>
+      
+      <div class="mb-4">
+        <label class="block text-sm font-semibold mb-1">Pilih Bulan & Tahun</label>
+        <input type="month" id="input-bulan-pdf" class="w-full border p-3 rounded font-bold text-gray-700">
+      </div>
+
+      <div class="flex justify-end gap-2 mt-6">
+        <button onclick="tutupModalCetakPDF()" class="px-4 py-2 bg-gray-300 rounded font-semibold hover:bg-gray-400">Batal</button>
+        <button onclick="prosesCetakPDFHanya()" id="btn-proses-pdf" class="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700">Download PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL TUTUP BUKU (KHUSUS AKHIR BULAN) -->
   <div id="modal-tutup" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 px-4">
     <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
       <h2 class="text-xl font-bold mb-2 border-b pb-2 text-red-700">📚 Tutup Buku & Arsipkan</h2>
-      <p class="text-sm text-gray-600 mb-4">Proses ini akan mencetak <b>Laporan PDF</b>, menyembunyikan data ke menu <b>Arsip</b>, dan memindahkan Saldo ATM secara otomatis.</p>
+      <p class="text-sm text-gray-600 mb-4">Proses ini akan mengarsipkan data bulan yang dipilih ke menu <b>Arsip</b> dan memindahkan Saldo ATM secara otomatis. <b>Kasbon aktif tidak akan diarsipkan.</b></p>
       
       <div class="mb-4">
         <label class="block text-sm font-semibold mb-1">Pilih Bulan & Tahun</label>
@@ -55,7 +73,7 @@
 
       <div class="flex justify-end gap-2 mt-6">
         <button onclick="tutupModalTutupBuku()" class="px-4 py-2 bg-gray-300 rounded font-semibold hover:bg-gray-400">Batal</button>
-        <button onclick="prosesTutupBuku()" id="btn-proses-tutup" class="px-4 py-2 bg-red-700 text-white rounded font-bold hover:bg-red-800">Proses & Download PDF</button>
+        <button onclick="prosesTutupBuku()" id="btn-proses-tutup" class="px-4 py-2 bg-red-700 text-white rounded font-bold hover:bg-red-800">Proses Tutup Buku</button>
       </div>
     </div>
   </div>
@@ -195,6 +213,7 @@
         <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-3">
           <h2 class="text-2xl font-bold w-full md:w-auto">📓 Riwayat Transaksi Aktif</h2>
           <div class="flex flex-wrap gap-2 w-full md:w-auto justify-end">
+            <button onclick="bukaModalCetakPDF()" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-700 text-sm">📄 Cetak PDF</button>
             <button onclick="bukaModalTutupBuku()" class="bg-red-700 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-red-800 text-sm">📚 Tutup Buku</button>
             <button onclick="exportExcel()" class="bg-green-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-green-700 text-sm">⬇️ Excel</button>
             <button onclick="bukaModalTambah()" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-blue-700 text-sm">➕ Tambah</button>
@@ -233,7 +252,7 @@
         <div id="daftar-kasbon" class="bg-white rounded-lg shadow-md p-4"></div>
       </section>
 
-      <!-- TAB 4: ARSIP DATA (SOFT DELETE) -->
+      <!-- TAB 4: ARSIP DATA -->
       <section id="arsip" class="tab-content">
         <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-3">
           <h2 class="text-2xl font-bold w-full md:w-auto">🗄️ Arsip Buku (Draft)</h2>
@@ -294,7 +313,97 @@
     }
 
     // ==========================================
-    // 2. TUTUP BUKU & CETAK PDF
+    // 2. FITUR A: CETAK PDF SAJA (TANPA MENGUBAH DATA)
+    // ==========================================
+    function bukaModalCetakPDF() {
+      document.getElementById('modal-cetak-pdf').classList.remove('hidden');
+      document.getElementById('modal-cetak-pdf').classList.add('flex');
+    }
+    function tutupModalCetakPDF() {
+      document.getElementById('modal-cetak-pdf').classList.add('hidden');
+      document.getElementById('modal-cetak-pdf').classList.remove('flex');
+    }
+
+    async function prosesCetakPDFHanya() {
+      const inputBulan = document.getElementById('input-bulan-pdf').value;
+      if (!inputBulan) return alert("Silakan pilih bulan laporan!");
+
+      const btn = document.getElementById('btn-proses-pdf');
+      btn.innerText = "Mengunduh...";
+      btn.disabled = true;
+
+      try {
+        const [yearStr, monthStr] = inputBulan.split('-');
+        const year = parseInt(yearStr);
+        const month = parseInt(monthStr);
+
+        const startOfMonth = new Date(year, month - 1, 1);
+        const endOfMonth = new Date(year, month, 0, 23, 59, 59);
+
+        const snapshot = await db.collection("transaksi")
+          .where("waktu", ">=", startOfMonth)
+          .where("waktu", "<=", endOfMonth)
+          .orderBy("waktu", "asc")
+          .get();
+
+        if (snapshot.empty) {
+          alert("Tidak ada transaksi yang tercatat pada bulan tersebut.");
+          btn.innerText = "Download PDF"; btn.disabled = false; return;
+        }
+
+        let pdfData = [];
+        let totalMasuk = 0, totalKeluar = 0;
+
+        snapshot.forEach(doc => {
+          const trx = doc.data();
+          if (trx.is_arsip) return; // Jangan sertakan data yang berada di Arsip
+
+          const nom = trx.nominal || 0;
+          const d = trx.waktu.toDate();
+          const tglStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+          let ket = trx.keterangan || trx.nama_peminjam || `${trx.dari_rekening} -> ${trx.ke_rekening}`;
+          let statusKasbon = (trx.jenis === 'kasbon' && trx.status === 'lunas') ? ' (Lunas)' : (trx.jenis === 'kasbon' ? ' (Aktif)' : '');
+          
+          pdfData.push([tglStr, trx.jenis.toUpperCase(), trx.rekening ? trx.rekening.toUpperCase() : '-', ket + statusKasbon, formatRp(nom)]);
+
+          if (trx.jenis === 'masuk') totalMasuk += nom;
+          else if (trx.jenis === 'keluar' || trx.jenis === 'kasbon') totalKeluar += nom;
+        });
+
+        const namaBulanLengkap = startOfMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+        const { jsPDF } = window.jspdf;
+        const docPdf = new jsPDF();
+        
+        docPdf.setFontSize(16);
+        docPdf.text(`Laporan Keuangan - Bulan ${namaBulanLengkap}`, 14, 20);
+        
+        docPdf.autoTable({
+          startY: 25,
+          head: [['Waktu', 'Kategori', 'Rekening', 'Keterangan', 'Nominal']],
+          body: pdfData,
+          theme: 'grid',
+          headStyles: { fillColor: [41, 128, 185] }
+        });
+
+        let finalY = docPdf.lastAutoTable.finalY + 10;
+        docPdf.setFontSize(12);
+        docPdf.setTextColor(0, 128, 0);
+        docPdf.text(`Total Uang Masuk: ${formatRp(totalMasuk)}`, 14, finalY);
+        docPdf.setTextColor(200, 0, 0);
+        docPdf.text(`Total Uang Keluar (termasuk kasbon): ${formatRp(totalKeluar)}`, 14, finalY + 7);
+        
+        docPdf.save(`Laporan_Keuangan_${namaBulanLengkap.replace(' ', '_')}.pdf`);
+        tutupModalCetakPDF();
+
+      } catch (error) {
+        console.error(error); alert("Terjadi kesalahan saat mencetak PDF.");
+      } finally {
+        btn.innerText = "Download PDF"; btn.disabled = false;
+      }
+    }
+
+    // ==========================================
+    // 3. FITUR B: TUTUP BUKU & ARSIPKAN
     // ==========================================
     function bukaModalTutupBuku() {
       document.getElementById('modal-tutup').classList.remove('hidden');
@@ -321,7 +430,6 @@
         const startOfMonth = new Date(year, month - 1, 1);
         const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-        // Hanya tarik data yang BUKAN arsip
         const snapshot = await db.collection("transaksi")
           .where("waktu", ">=", startOfMonth)
           .where("waktu", "<=", endOfMonth)
@@ -330,31 +438,17 @@
 
         if (snapshot.empty) {
           alert("Tidak ada transaksi yang tercatat pada bulan tersebut.");
-          btn.innerText = "Proses & Download PDF"; btn.disabled = false; return;
+          btn.innerText = "Proses Tutup Buku"; btn.disabled = false; return;
         }
 
-        let pdfData = [];
         let arsipDocs = [];
         let netBrimo = 0, netSea = 0;
-        let totalMasuk = 0, totalKeluar = 0;
 
         snapshot.forEach(doc => {
           const trx = doc.data();
-          if (trx.is_arsip) return; // Lewati jika sudah diarsipkan sebelumnya
+          if (trx.is_arsip) return;
 
           const nom = trx.nominal || 0;
-          const d = trx.waktu.toDate();
-          const tglStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-          let ket = trx.keterangan || trx.nama_peminjam || `${trx.dari_rekening} -> ${trx.ke_rekening}`;
-          let statusKasbon = (trx.jenis === 'kasbon' && trx.status === 'lunas') ? ' (Lunas)' : (trx.jenis === 'kasbon' ? ' (Aktif)' : '');
-          
-          pdfData.push([tglStr, trx.jenis.toUpperCase(), trx.rekening ? trx.rekening.toUpperCase() : '-', ket + statusKasbon, formatRp(nom)]);
-
-          // PENGHITUNGAN TOTAL PDF BAWAH
-          if (trx.jenis === 'masuk') totalMasuk += nom;
-          else if (trx.jenis === 'keluar' || trx.jenis === 'kasbon') totalKeluar += nom;
-
-          // LOGIKA ARSIP DAN PEMINDAHAN SALDO
           let akanDiarsip = true;
           if (trx.jenis === 'kasbon' && trx.status !== 'lunas') akanDiarsip = false; 
 
@@ -371,39 +465,12 @@
           }
         });
 
-        // BUAT PDF
         const namaBulanLengkap = startOfMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
-        const { jsPDF } = window.jspdf;
-        const docPdf = new jsPDF();
-        
-        docPdf.setFontSize(16);
-        docPdf.text(`Laporan Keuangan - Bulan ${namaBulanLengkap}`, 14, 20);
-        
-        docPdf.autoTable({
-          startY: 25,
-          head: [['Waktu', 'Kategori', 'Rekening', 'Keterangan', 'Nominal']],
-          body: pdfData,
-          theme: 'grid',
-          headStyles: { fillColor: [41, 128, 185] }
-        });
-
-        // CETAK TOTAL DI BAWAH TABEL PDF
-        let finalY = docPdf.lastAutoTable.finalY + 10;
-        docPdf.setFontSize(12);
-        docPdf.setTextColor(0, 128, 0); // Warna Hijau untuk Masuk
-        docPdf.text(`Total Uang Masuk: ${formatRp(totalMasuk)}`, 14, finalY);
-        docPdf.setTextColor(200, 0, 0); // Warna Merah untuk Keluar
-        docPdf.text(`Total Uang Keluar (termasuk kasbon): ${formatRp(totalKeluar)}`, 14, finalY + 7);
-        
-        docPdf.save(`Laporan_Keuangan_${namaBulanLengkap.replace(' ', '_')}.pdf`);
-
-        // EKSEKUSI PEMINDAHAN KE ARSIP DAN INJEKSI SALDO
         let batchArray = [];
         let batch = db.batch();
         let count = 0;
 
         arsipDocs.forEach(ref => {
-          // BUKAN DIHAPUS, TAPI DIBERI LABEL ARSIP
           batch.update(ref, { is_arsip: true, arsip_bulan: inputBulan });
           count++;
           if (count === 490) { batchArray.push(batch.commit()); batch = db.batch(); count = 0; }
@@ -430,18 +497,18 @@
         if (count > 0) batchArray.push(batch.commit());
         await Promise.all(batchArray);
 
-        alert(`Tutup Buku ${namaBulanLengkap} Berhasil!\nLaporan PDF telah diunduh, riwayat telah dipindah ke Arsip, dan Saldo ATM Anda sudah dipindahkan dengan aman.`);
+        alert(`Tutup Buku ${namaBulanLengkap} Berhasil!\nRiwayat telah dipindah ke Arsip, dan Saldo ATM Anda sudah dipindahkan dengan aman.`);
         tutupModalTutupBuku();
 
       } catch (error) {
         console.error(error); alert("Terjadi kesalahan saat memproses tutup buku.");
       } finally {
-        btn.innerText = "Proses & Download PDF"; btn.disabled = false;
+        btn.innerText = "Proses Tutup Buku"; btn.disabled = false;
       }
     }
 
     // ==========================================
-    // 3. FUNGSI TAMBAH, EDIT, CETAK COPAS
+    // 4. FUNGSI TAMBAH, EDIT, CETAK COPAS
     // ==========================================
     function bukaModalTambah() {
       document.getElementById('modal-tambah').classList.remove('hidden'); document.getElementById('modal-tambah').classList.add('flex'); document.getElementById('form-transaksi').reset(); ubahFormTambah(); 
@@ -490,7 +557,7 @@
     }
 
     // ==========================================
-    // 4. LOGIKA UTAMA (REAL-TIME & FILTER ARSIP)
+    // 5. LOGIKA UTAMA (REAL-TIME DASHBOARD & ARSIP)
     // ==========================================
     function bukaTab(tabName) {
       document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
@@ -508,14 +575,12 @@
         let htmlTransaksi = '';
         let kasbonPerOrang = {};
         let arrCetakTxt = [];
-        
-        // Penampung untuk menu Arsip
         let arsipPerBulan = {};
 
         snapshot.forEach((doc) => {
           const id = doc.id; const trx = doc.data(); const nom = trx.nominal || 0;
-          
           let tglStr = "Menyimpan..."; let tglCetak = "Belum Ada Tanggal"; let isoWaktu = toDatetimeLocal(new Date());
+
           if (trx.waktu) {
             const d = trx.waktu.toDate();
             tglStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
@@ -529,17 +594,15 @@
           let statusKasbon = (trx.jenis === 'kasbon' && trx.status === 'lunas') ? ' (Lunas)' : '';
           let bank = (trx.rekening && trx.rekening !== 'reset') ? ` [${trx.rekening.toUpperCase()}]` : '';
 
-          // JIKA DATA INI ADALAH ARSIP (Disembunyikan dari Dashboard & Buku Kas)
           if (trx.is_arsip) {
             const bulan = trx.arsip_bulan || 'Lainnya';
             if(!arsipPerBulan[bulan]) arsipPerBulan[bulan] = [];
             arsipPerBulan[bulan].push({
               id: id, tglStr: tglStr, kategori: kategori, badgeColor: badgeColor, bank: bank, ket: ket, statusKasbon: statusKasbon, nom: nom
             });
-            return; // Berhenti memproses data ini untuk aplikasi utama
+            return;
           }
 
-          // === MULAI LOGIKA APLIKASI UTAMA (NON-ARSIP) ===
           if (trx.jenis === 'masuk') {
             if (trx.rekening === 'b') saldoBrimo += nom; if (trx.rekening === 's') saldoSea += nom;
           } else if (trx.jenis === 'keluar' || trx.jenis === 'kasbon') {
@@ -572,14 +635,12 @@
           semuaData.push({ Waktu: tglStr, Kategori: kategori, Bank: bank, Keterangan: ket, Nominal: nom, Status: trx.status || '-' });
         });
 
-        // 1. UPDATE BUKU KAS & DASHBOARD
         teksCetakGlobal = arrCetakTxt.join("\n");
         document.getElementById('saldo-brimo').innerText = formatRp(saldoBrimo);
         document.getElementById('saldo-sea').innerText = formatRp(saldoSea);
         document.getElementById('total-kasbon').innerText = formatRp(totalKasbon);
         document.getElementById('tabel-transaksi').innerHTML = htmlTransaksi || `<tr><td colspan="5" class="text-center py-4">Belum ada transaksi di periode ini</td></tr>`;
 
-        // 2. UPDATE REKAP KASBON
         let htmlKasbon = '';
         if (Object.keys(kasbonPerOrang).length === 0) { htmlKasbon = `<div class="text-center py-8 text-gray-500 font-semibold">Semua kasbon sudah lunas / kosong.</div>`; } 
         else {
@@ -615,7 +676,6 @@
         }
         document.getElementById('daftar-kasbon').innerHTML = htmlKasbon;
 
-        // 3. UPDATE MENU ARSIP
         let htmlArsip = '';
         if (Object.keys(arsipPerBulan).length === 0) { htmlArsip = `<div class="text-center py-8 text-gray-500 font-semibold">Belum ada data yang diarsipkan (Draft).</div>`; }
         else {
@@ -655,7 +715,6 @@
       });
     }
 
-    // FUNGSI LUNAS KASBON
     async function lunasKasbon(id) {
       if (confirm("✅ Tandai LUNAS (Potong Gaji)?\n\nSaldo ATM TIDAK akan bertambah.")) await db.collection("transaksi").doc(id).update({ status: 'lunas' });
     }
@@ -668,12 +727,10 @@
       }
     }
 
-    // FUNGSI HAPUS BUKU KAS AKTIF
     async function hapusDataPeringatan(id) {
       if (confirm("⚠️ HAPUS TRANSAKSI AKTIF?\n\nGunakan hanya jika SALAH KETIK. Transaksi ini akan hilang dari riwayat utama dan uang akan kembali ke saldo.")) await db.collection("transaksi").doc(id).delete();
     }
 
-    // FUNGSI ARSIP (RESTORE & HAPUS PERMANEN)
     async function restoreSatuData(id) {
       if (confirm("🔄 Kembalikan data ini ke Buku Kas utama?\n\n(Pastikan Anda menghapus 'Saldo Pindahan' secara manual jika data ini mempengaruhi saldo).")) {
         await db.collection("transaksi").doc(id).update({ is_arsip: firebase.firestore.FieldValue.delete(), arsip_bulan: firebase.firestore.FieldValue.delete() });
